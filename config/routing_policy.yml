@@ -1,0 +1,24 @@
+fallback_provider: spacepayments
+simulation_seed: 42
+strategies:
+  count_share:
+    enabled: true
+    weight: 0.30
+  volume_share:
+    enabled: true
+    weight: 0.20
+  conversion:
+    enabled: true
+    weight: 0.20
+  cascade_priority:
+    enabled: true
+    weight: 0.10
+  amount_band:
+    enabled: true
+    weight: 0.10
+  financial_obligation:
+    enabled: true
+    weight: 0.05
+  load_balance:
+    enabled: true
+    weight: 0.05

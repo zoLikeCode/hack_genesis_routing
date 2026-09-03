@@ -1,0 +1,8 @@
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+
+ENV["RUBY_YJIT_ENABLE"] ||= "1"
+
+require_relative "../lib/routing"
+
+exit Routing::CLI.start(ARGV)
