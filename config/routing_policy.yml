@@ -1,5 +1,7 @@
 fallback_provider: spacepayments
 simulation_seed: 42
+hard_constraints:
+  default_requests_per_minute_limit: null
 strategies:
   count_share:
     enabled: true

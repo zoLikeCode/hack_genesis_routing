@@ -1,0 +1,19 @@
+# frozen_string_literal: true
+
+module Routing
+  module HardConstraints
+    module Reasons
+      PROVIDER_INACTIVE = "provider_inactive"
+      AMOUNT_BELOW_MINIMUM = "amount_below_minimum"
+      AMOUNT_EXCEEDS_LIMIT = "amount_exceeds_limit"
+      DAILY_LIMIT_EXCEEDED = "daily_limit_exceeded"
+      IN_PROGRESS_COUNT_EXCEEDED = "in_progress_count_exceeded"
+      IN_PROGRESS_AMOUNT_EXCEEDED = "in_progress_amount_exceeded"
+      BANK_NOT_IN_LIST = "bank_not_in_list"
+      BANK_EXCLUDED = "bank_excluded"
+      NEGATIVE_MARGIN = "negative_margin"
+      NO_REQUISITES = "no_requisites"
+      RATE_LIMIT_EXCEEDED = "rate_limit_exceeded"
+    end
+  end
+end
