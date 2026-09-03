@@ -1,6 +1,6 @@
 ## MISIS Solution / HackGenesis
 
-Smart payout routing between payment providers. Ruby 4.0, open source, no neural nets.
+Smart payout routing between payment providers.
 
 ### Setup
 
@@ -39,7 +39,7 @@ Enable YJIT in the CLI via `RUBY_YJIT_ENABLE=1` (already defaulted in `bin/route
 bin/                 # setup, console, route
 config/              # routing_policy.yml (strategy weights)
 data/                # public fixtures (providers, queue, history, samples)
-lib/routing/     # application code (Zeitwerk)
+lib/routing/         # application code (Zeitwerk)
 scripts/             # organizer validate_10.rb (acceptance)
 spec/                # RSpec
 ```
