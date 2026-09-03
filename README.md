@@ -43,6 +43,9 @@ Enable YJIT in the CLI via `RUBY_YJIT_ENABLE=1` (already defaulted in `bin/route
 Each profile contains its own strategy combination and weights. Strategies listed inside a profile are enabled automatically.
 The application rejects an unknown profile and rejects a selected profile when at least one individual strategy is enabled.
 
+`Routing::Router` always applies every hard constraint before ranking. The eligible fallback is kept outside soft-goal
+ranking and is selected only when no untried external provider remains.
+
 ### Layout
 
 ```
