@@ -4,6 +4,8 @@ require "yaml"
 
 module Routing
   class Policy
+    attr_reader :active_profile
+
     def self.load(path)
       new(parse(path))
     end
@@ -11,17 +13,22 @@ module Routing
     def initialize(data)
       Routing.assert(data.respond_to?(:to_h), "policy must be a Hash")
       @data = stringify_keys(data.to_h)
-      @strategies = stringify_strategies(@data.fetch("strategies", {}))
+      @strategies = normalize_strategies(
+        @data.fetch("strategies", {}),
+        enabled_by_default: false,
+        context: "strategies"
+      )
+      @profiles = normalize_profiles(@data.fetch("profiles", {}))
+      @active_profile = normalize_active_profile(@data["active_profile"])
+      validate_strategy_source!
+      @active_strategies = resolve_active_strategies
     end
 
     def weight_for(key)
-      entry = @strategies[key.to_s]
+      entry = @active_strategies[key.to_s]
       return 0 if entry.nil?
-      return 0 unless entry["enabled"]
 
-      weight = entry.fetch("weight", 0)
-      Routing.assert(weight.is_a?(Numeric), "strategy weight must be numeric")
-      weight
+      entry.fetch("weight")
     end
 
     def enabled?(key)
@@ -50,9 +57,78 @@ module Routing
       hash.transform_keys(&:to_s)
     end
 
-    def stringify_strategies(raw)
-      Routing.assert(raw.respond_to?(:to_h), "strategies must be a Hash")
-      stringify_keys(raw.to_h).transform_values { |entry| stringify_keys(entry.to_h) }
+    def normalize_strategies(raw, enabled_by_default:, context:)
+      input_error!("#{context} must be a mapping") unless raw.respond_to?(:to_h)
+
+      stringify_keys(raw.to_h).to_h do |name, entry|
+        input_error!("#{context} strategy name must not be empty") if name.empty?
+        input_error!("#{context}.#{name} must be a mapping") unless entry.respond_to?(:to_h)
+
+        [name, normalize_strategy(entry.to_h, enabled_by_default: enabled_by_default, context: "#{context}.#{name}")]
+      end
+    end
+
+    def normalize_strategy(raw, enabled_by_default:, context:)
+      entry = stringify_keys(raw)
+      enabled = entry.fetch("enabled", enabled_by_default)
+      input_error!("#{context}.enabled must be true or false") unless [true, false].include?(enabled)
+
+      weight = entry.fetch("weight", 0)
+      input_error!("#{context}.weight must be numeric") unless weight.is_a?(Numeric)
+      input_error!("#{context}.weight must not be negative") if weight.negative?
+      input_error!("#{context}.weight must be positive when enabled") if enabled && !weight.positive?
+
+      entry.merge("enabled" => enabled, "weight" => weight)
+    end
+
+    def normalize_profiles(raw)
+      input_error!("profiles must be a mapping") unless raw.respond_to?(:to_h)
+
+      stringify_keys(raw.to_h).to_h do |name, profile|
+        [name, normalize_profile(name, profile)]
+      end
+    end
+
+    def normalize_profile(name, raw)
+      input_error!("profile name must not be empty") if name.empty?
+      input_error!("profiles.#{name} must be a mapping") unless raw.respond_to?(:to_h)
+
+      strategies = stringify_keys(raw.to_h)["strategies"]
+      input_error!("profiles.#{name}.strategies is required") if strategies.nil?
+      normalized = normalize_strategies(
+        strategies,
+        enabled_by_default: true,
+        context: "profiles.#{name}.strategies"
+      )
+      input_error!("profiles.#{name}.strategies must not be empty") if normalized.empty?
+      enabled = normalized.any? { |_, entry| entry.fetch("enabled") }
+      input_error!("profiles.#{name} must enable at least one strategy") unless enabled
+      normalized
+    end
+
+    def normalize_active_profile(value)
+      return if value.nil?
+
+      input_error!("active_profile must be a non-empty string") unless value.is_a?(String) && !value.empty?
+      value
+    end
+
+    def validate_strategy_source!
+      return if active_profile.nil?
+
+      input_error!("unknown active_profile #{active_profile}") unless @profiles.key?(active_profile)
+      return unless @strategies.any? { |_, entry| entry.fetch("enabled") }
+
+      input_error!("active_profile cannot be used while an individual strategy is enabled")
+    end
+
+    def resolve_active_strategies
+      source = active_profile.nil? ? @strategies : @profiles.fetch(active_profile)
+      source.select { |_, entry| entry.fetch("enabled") }.freeze
+    end
+
+    def input_error!(message)
+      raise InvalidInputError, message
     end
   end
 end
