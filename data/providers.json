@@ -23,7 +23,11 @@
       "exclude_banks": false,
       "provider_margin_pct": 1.2,
       "merchant_margin_pct": 1.5,
-      "allow_negative_agreement": false
+      "allow_negative_agreement": false,
+      "volume_share_pct": 50,
+      "requests_per_minute_limit": 15,
+      "daily_turnover_min": 3000000,
+      "daily_turnover_max": 4500000
     },
     {
       "payment_system": "payflow",
@@ -45,7 +49,11 @@
       "exclude_banks": false,
       "provider_margin_pct": 1.0,
       "merchant_margin_pct": 1.5,
-      "allow_negative_agreement": false
+      "allow_negative_agreement": false,
+      "volume_share_pct": 20,
+      "requests_per_minute_limit": 10,
+      "daily_turnover_min": 2000000,
+      "daily_turnover_max": null
     },
     {
       "payment_system": "quickpay",
@@ -67,7 +75,11 @@
       "exclude_banks": false,
       "provider_margin_pct": 0.8,
       "merchant_margin_pct": 1.5,
-      "allow_negative_agreement": false
+      "allow_negative_agreement": false,
+      "volume_share_pct": 30,
+      "requests_per_minute_limit": 20,
+      "daily_turnover_min": 2500000,
+      "daily_turnover_max": 6000000
     },
     {
       "payment_system": "spacepayments",
@@ -90,6 +102,10 @@
       "provider_margin_pct": 0.5,
       "merchant_margin_pct": 1.5,
       "allow_negative_agreement": false,
+      "volume_share_pct": 0,
+      "requests_per_minute_limit": null,
+      "daily_turnover_min": null,
+      "daily_turnover_max": null,
       "note": "self-provider, используется только как fallback"
     }
   ]

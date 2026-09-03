@@ -4,14 +4,16 @@ module Routing
   class Provider
     WINDOW_SEC = 60
 
-    attr_reader :name, :status, :traffic_percentage,
+    attr_reader :name, :status, :traffic_percentage, :priority,
                 :limit_amount_min, :limit_amount_max,
                 :daily_amount_limit, :daily_approved_amount,
                 :in_progress_count_limit, :in_progress_count,
                 :in_progress_amount_limit, :in_progress_amount,
                 :available_requisites, :banks, :exclude_banks,
                 :provider_margin_pct, :merchant_margin_pct,
-                :allow_negative_agreement, :requests_per_minute_limit
+                :allow_negative_agreement, :requests_per_minute_limit,
+                :conversion_24h, :volume_share_pct,
+                :daily_turnover_min, :daily_turnover_max
 
     def initialize(attrs)
       attrs = stringify_keys(attrs)
@@ -19,6 +21,7 @@ module Routing
       assign_limits(attrs)
       assign_load(attrs)
       assign_commercial(attrs)
+      assign_goals(attrs)
       @request_times = []
     end
 
@@ -98,6 +101,14 @@ module Routing
       @allow_negative_agreement = attrs["allow_negative_agreement"] ? true : false
     end
 
+    def assign_goals(attrs)
+      @priority = optional_positive_integer(attrs["priority"], "priority")
+      @conversion_24h = optional_number(attrs["conversion_24h"], "conversion_24h")
+      @volume_share_pct = optional_number(attrs["volume_share_pct"], "volume_share_pct")
+      @daily_turnover_min = optional_number(attrs["daily_turnover_min"], "daily_turnover_min")
+      @daily_turnover_max = optional_number(attrs["daily_turnover_max"], "daily_turnover_max")
+    end
+
     def optional_number(value, field)
       return if value.nil?
 
@@ -108,6 +119,13 @@ module Routing
       return if value.nil?
 
       required_integer(value, field)
+    end
+
+    def optional_positive_integer(value, field)
+      return if value.nil?
+
+      Routing.assert(value.is_a?(Integer) && value.positive?, "#{field} must be a positive integer")
+      value
     end
 
     def required_number(value, field)

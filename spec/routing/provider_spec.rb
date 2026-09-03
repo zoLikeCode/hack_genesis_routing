@@ -48,4 +48,32 @@ RSpec.describe Routing::Provider do
       expect(build_provider(traffic_percentage: 0).primary?(fallback: "spacepayments")).to be(false)
     end
   end
+
+  describe "soft-goal fields" do
+    subject(:loaded) { Routing::ProviderPool.load(File.join(SPEC_ROOT, "data/providers.json")).fetch("vipay") }
+
+    it "loads priority from providers.json" do
+      expect(loaded.priority).to eq(1)
+    end
+
+    it "loads conversion_24h from providers.json" do
+      expect(loaded.conversion_24h).to eq(0.87)
+    end
+
+    it "loads volume_share_pct from providers.json" do
+      expect(loaded.volume_share_pct).to eq(50)
+    end
+
+    it "loads requests_per_minute_limit from providers.json" do
+      expect(loaded.requests_per_minute_limit).to eq(15)
+    end
+
+    it "loads daily_turnover_min from providers.json" do
+      expect(loaded.daily_turnover_min).to eq(3_000_000)
+    end
+
+    it "loads daily_turnover_max from providers.json" do
+      expect(loaded.daily_turnover_max).to eq(4_500_000)
+    end
+  end
 end

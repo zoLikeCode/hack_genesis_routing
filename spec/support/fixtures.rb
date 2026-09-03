@@ -19,11 +19,54 @@ module RoutingSpec
       Routing::Provider.new(attrs)
     end
 
+    def build_policy(strategies = nil)
+      Routing::Policy.new(
+        "fallback_provider" => "spacepayments",
+        "strategies" => strategies || default_strategy_weights
+      )
+    end
+
+    def empty_snapshot(**overrides)
+      Routing::SoftGoals::Snapshot.new(**overrides)
+    end
+
+    def default_strategy_weights
+      {
+        "count_share" => { "enabled" => true, "weight" => 0.30 },
+        "volume_share" => { "enabled" => true, "weight" => 0.20 },
+        "conversion" => { "enabled" => true, "weight" => 0.20 },
+        "cascade_priority" => { "enabled" => true, "weight" => 0.10 },
+        "financial_obligation" => { "enabled" => true, "weight" => 0.05 }
+      }
+    end
+
     def default_provider_attrs
+      default_identity_attrs
+        .merge(default_goal_attrs)
+        .merge(default_limit_attrs)
+        .merge(default_commercial_attrs)
+    end
+
+    def default_identity_attrs
       {
         "payment_system" => "vipay",
         "status" => "active",
-        "traffic_percentage" => 40,
+        "traffic_percentage" => 40
+      }
+    end
+
+    def default_goal_attrs
+      {
+        "priority" => 1,
+        "conversion_24h" => 0.87,
+        "volume_share_pct" => 50,
+        "daily_turnover_min" => 3_000_000,
+        "daily_turnover_max" => 4_500_000
+      }
+    end
+
+    def default_limit_attrs
+      {
         "limit_amount_min" => 1_000,
         "limit_amount_max" => 100_000,
         "daily_amount_limit" => 5_000_000,
@@ -32,7 +75,12 @@ module RoutingSpec
         "in_progress_count" => 0,
         "in_progress_amount_limit" => 1_000_000,
         "in_progress_amount" => 0,
-        "available_requisites" => 12,
+        "available_requisites" => 12
+      }
+    end
+
+    def default_commercial_attrs
+      {
         "banks" => %w[sberbank tinkoff vtb],
         "exclude_banks" => false,
         "provider_margin_pct" => 1.2,
