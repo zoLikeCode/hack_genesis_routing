@@ -44,7 +44,8 @@ Each profile contains its own strategy combination and weights. Strategies liste
 The application rejects an unknown profile and rejects a selected profile when at least one individual strategy is enabled.
 
 `Routing::Router` always applies every hard constraint before ranking. The eligible fallback is kept outside soft-goal
-ranking and is selected only when no untried external provider remains.
+ranking and is selected only when no untried external provider remains. `Routing::Engine` walks the operations queue,
+calls Router for each pick, simulates the attempt, and retries with `attempted` on refusal.
 
 ### Layout
 

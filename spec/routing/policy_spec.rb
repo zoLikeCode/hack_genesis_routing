@@ -12,9 +12,20 @@ RSpec.describe Routing::Policy do
       expect(policy.weight_for("financial_obligation")).to eq(0.05)
     end
 
-    it "uses individual strategies when active_profile is null" do
+    it "leaves active_profile nil in individual mode" do
       expect(policy.active_profile).to be_nil
+    end
+
+    it "enables count_share in individual mode" do
       expect(policy.enabled?("count_share")).to be(true)
+    end
+
+    it "reads simulation_seed from routing_policy.yml" do
+      expect(policy.simulation_seed).to eq(42)
+    end
+
+    it "reads a null default RPM limit from routing_policy.yml" do
+      expect(policy.default_requests_per_minute_limit).to be_nil
     end
 
     it "raises InvalidInputError when the file is missing" do
@@ -32,6 +43,15 @@ RSpec.describe Routing::Policy do
       described_class.new("strategies" => { "count_share" => { "enabled" => false, "weight" => 0.30 } })
     end
 
+    let(:mixed) do
+      described_class.new(
+        "strategies" => {
+          "count_share" => { "enabled" => true, "weight" => 1.0 },
+          "conversion" => { "enabled" => false, "weight" => 1.0 }
+        }
+      )
+    end
+
     it "returns 0 when the strategy is disabled" do
       expect(disabled.weight_for("count_share")).to eq(0)
     end
@@ -44,24 +64,50 @@ RSpec.describe Routing::Policy do
       expect(described_class.new({}).weight_for("missing")).to eq(0)
     end
 
-    it "uses only individually enabled strategies" do
-      policy = described_class.new(
-        "strategies" => {
-          "count_share" => { "enabled" => true, "weight" => 1.0 },
-          "conversion" => { "enabled" => false, "weight" => 1.0 }
-        }
-      )
+    it "defaults simulation_seed to 42" do
+      expect(described_class.new({}).simulation_seed).to eq(42)
+    end
 
-      expect(policy.weight_for("count_share")).to eq(1.0)
-      expect(policy.weight_for("conversion")).to eq(0)
+    it "reads default_requests_per_minute_limit from hard_constraints" do
+      policy = described_class.new("hard_constraints" => { "default_requests_per_minute_limit" => 7 })
+      expect(policy.default_requests_per_minute_limit).to eq(7)
+    end
+
+    it "keeps the weight of an enabled individual strategy" do
+      expect(mixed.weight_for("count_share")).to eq(1.0)
+    end
+
+    it "zeros the weight of a disabled individual strategy" do
+      expect(mixed.weight_for("conversion")).to eq(0)
     end
   end
 
   describe "profiles" do
     subject(:policy) { described_class.new(profile_policy_data) }
 
-    it "uses weights from the selected profile" do
+    let(:profile_policy_data) do
+      {
+        "active_profile" => "conversion_first",
+        "strategies" => {
+          "count_share" => { "enabled" => false, "weight" => 0.30 },
+          "volume_share" => { "enabled" => false, "weight" => 0.20 }
+        },
+        "profiles" => {
+          "conversion_first" => {
+            "strategies" => {
+              "conversion" => { "weight" => 0.75 },
+              "count_share" => { "weight" => 0.25 }
+            }
+          }
+        }
+      }
+    end
+
+    it "uses conversion weight from the selected profile" do
       expect(policy.weight_for("conversion")).to eq(0.75)
+    end
+
+    it "uses count_share weight from the selected profile" do
       expect(policy.weight_for("count_share")).to eq(0.25)
     end
 
@@ -95,24 +141,6 @@ RSpec.describe Routing::Policy do
         Routing::InvalidInputError,
         "profiles.conversion_first.strategies must not be empty"
       )
-    end
-
-    let(:profile_policy_data) do
-      {
-        "active_profile" => "conversion_first",
-        "strategies" => {
-          "count_share" => { "enabled" => false, "weight" => 0.30 },
-          "volume_share" => { "enabled" => false, "weight" => 0.20 }
-        },
-        "profiles" => {
-          "conversion_first" => {
-            "strategies" => {
-              "conversion" => { "weight" => 0.75 },
-              "count_share" => { "weight" => 0.25 }
-            }
-          }
-        }
-      }
     end
   end
 end

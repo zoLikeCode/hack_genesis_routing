@@ -42,11 +42,7 @@ module Routing
       end
 
       def evaluate(provider)
-        CHECKS.each do |check|
-          result = check.call(provider, @operation)
-          return result if result.skipped?
-        end
-        Result.ok
+        HardConstraints.evaluate(provider, @operation)
       end
 
       def skip_attempt(provider, result)

@@ -75,5 +75,9 @@ RSpec.describe Routing::Provider do
     it "loads daily_turnover_max from providers.json" do
       expect(loaded.daily_turnover_max).to eq(4_500_000)
     end
+
+    it "loads avg_latency_sec from providers.json" do
+      expect(loaded.avg_latency_sec).to eq(38)
+    end
   end
 end

@@ -4,24 +4,27 @@ require "optparse"
 
 module Routing
   class CLI
+    ROOT = File.expand_path("../..", __dir__)
+
     def self.start(argv)
       new.start(argv)
     end
 
     def start(argv)
-      options = parse(argv)
-      warn "Routing engine is not implemented yet (#{options.inspect})"
-      0
+      run(parse(argv))
+    rescue InvalidInputError => e
+      warn e.message
+      1
     end
 
     private
 
     def default_options
       {
-        providers: nil,
-        queue: nil,
-        history: nil,
-        policy: File.expand_path("../../config/routing_policy.yml", __dir__),
+        providers: File.join(ROOT, "data/providers.json"),
+        queue: File.join(ROOT, "data/operations_queue_10.json"),
+        history: File.join(ROOT, "data/operations_history.csv"),
+        policy: File.join(ROOT, "config/routing_policy.yml"),
         decisions_out: "routing_decisions_test.json",
         report_out: "routing_report_test.json"
       }
@@ -35,16 +38,28 @@ module Routing
 
     def define_options(opts, options)
       opts.banner = "Usage: bin/route [options]"
-      opts.on("--providers PATH", "providers.json") { |v| options[:providers] = v }
-      opts.on("--queue PATH", "operations_queue.json") { |v| options[:queue] = v }
-      opts.on("--history PATH", "operations_history.csv") { |v| options[:history] = v }
-      opts.on("--policy PATH", "routing policy YAML") { |v| options[:policy] = v }
-      opts.on("--decisions PATH", "output routing_decisions JSON") { |v| options[:decisions_out] = v }
-      opts.on("--report PATH", "output routing_report JSON") { |v| options[:report_out] = v }
+      opts.on("--providers PATH", "providers.json") { |value| options[:providers] = value }
+      opts.on("--queue PATH", "operations_queue.json") { |value| options[:queue] = value }
+      opts.on("--history PATH", "operations_history.csv") { |value| options[:history] = value }
+      opts.on("--policy PATH", "routing policy YAML") { |value| options[:policy] = value }
+      opts.on("--decisions PATH", "output routing_decisions JSON") { |value| options[:decisions_out] = value }
+      opts.on("--report PATH", "output routing_report JSON") { |value| options[:report_out] = value }
       opts.on("-h", "--help", "Show help") do
         puts opts
         exit 0
       end
+    end
+
+    def run(options)
+      policy = Policy.load(options[:policy])
+      providers = ProviderPool.load(options[:providers])
+      operations = Operation.load_queue(options[:queue])
+      History.load(options[:history]) if options[:history] && File.exist?(options[:history])
+      decisions = Engine.call(operations: operations, providers: providers, policy: policy)
+      report = Report.call(decisions: decisions, operations: operations, providers: providers, policy: policy)
+      JsonFile.write(options[:decisions_out], decisions.map(&:to_h))
+      JsonFile.write(options[:report_out], report)
+      0
     end
   end
 end

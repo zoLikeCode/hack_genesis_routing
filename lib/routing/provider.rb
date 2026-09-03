@@ -12,7 +12,7 @@ module Routing
                 :available_requisites, :banks, :exclude_banks,
                 :provider_margin_pct, :merchant_margin_pct,
                 :allow_negative_agreement, :requests_per_minute_limit,
-                :conversion_24h, :volume_share_pct,
+                :conversion_24h, :avg_latency_sec, :volume_share_pct,
                 :daily_turnover_min, :daily_turnover_max
 
     def initialize(attrs)
@@ -104,6 +104,7 @@ module Routing
     def assign_goals(attrs)
       @priority = optional_positive_integer(attrs["priority"], "priority")
       @conversion_24h = optional_number(attrs["conversion_24h"], "conversion_24h")
+      @avg_latency_sec = optional_number(attrs["avg_latency_sec"], "avg_latency_sec")
       @volume_share_pct = optional_number(attrs["volume_share_pct"], "volume_share_pct")
       @daily_turnover_min = optional_number(attrs["daily_turnover_min"], "daily_turnover_min")
       @daily_turnover_max = optional_number(attrs["daily_turnover_max"], "daily_turnover_max")

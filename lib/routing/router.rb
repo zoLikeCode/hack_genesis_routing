@@ -37,7 +37,7 @@ module Routing
         snapshot: @snapshot,
         policy: @policy
       )
-      preferred = ranking.preferred
+      preferred = Selector.call(ranking: ranking, operation: @operation, policy: @policy)
       fallback = preferred.nil? ? evaluation.fallback : nil
 
       Selection.new(

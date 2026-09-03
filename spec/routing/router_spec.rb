@@ -29,14 +29,20 @@ RSpec.describe Routing::Router do
 
   it "selects the highest-ranked external provider" do
     expect(selection.provider.name).to eq("payflow")
+  end
+
+  it "does not mark an external pick as fallback" do
     expect(selection.fallback?).to be(false)
   end
 
   context "when an external provider fails a hard constraint" do
     let(:providers) { [build_provider(status: "disabled", conversion_24h: 1.0), payflow_provider, fallback_provider] }
 
-    it "excludes it before soft-goal ranking" do
+    it "selects the remaining eligible provider" do
       expect(selection.provider.name).to eq("payflow")
+    end
+
+    it "records a skip for the ineligible provider" do
       expect(selection.evaluation.skipped.map(&:provider)).to include("vipay")
     end
   end
@@ -44,8 +50,11 @@ RSpec.describe Routing::Router do
   context "when the preferred provider has already been attempted" do
     let(:attempted) { ["payflow"] }
 
-    it "reruns ranking for the remaining external providers" do
+    it "selects the next remaining external provider" do
       expect(selection.provider.name).to eq("vipay")
+    end
+
+    it "reranks only the remaining external providers" do
       expect(selection.ranking.ordered.map(&:name)).to eq(["vipay"])
     end
   end
@@ -55,7 +64,13 @@ RSpec.describe Routing::Router do
 
     it "selects the hard-constraint-eligible fallback" do
       expect(selection.provider.name).to eq("spacepayments")
+    end
+
+    it "marks the pick as fallback" do
       expect(selection.fallback?).to be(true)
+    end
+
+    it "keeps fallback out of the ranking" do
       expect(selection.ranking.ordered).to be_empty
     end
   end
@@ -64,23 +79,29 @@ RSpec.describe Routing::Router do
     let(:attempted) { %w[vipay payflow] }
     let(:providers) { [vipay_provider, payflow_provider, fallback_provider(status: "disabled")] }
 
-    it "returns an unroutable selection instead of bypassing hard constraints" do
+    it "returns no provider" do
       expect(selection.provider).to be_nil
+    end
+
+    it "is not routable" do
       expect(selection.routable?).to be(false)
+    end
+
+    it "does not claim fallback was used" do
       expect(selection.fallback?).to be(false)
     end
   end
 
   it "rejects an unknown attempted provider" do
-    expect do
-      described_class.call(
-        operation: operation,
-        providers: providers,
-        snapshot: snapshot,
-        policy: policy,
-        attempted: ["unknown"]
-      )
-    end.to raise_error(Routing::InvariantError, "attempted contains unknown providers: unknown")
+    expect { call_with_unknown_attempt }.to raise_error(
+      Routing::InvariantError, "attempted contains unknown providers: unknown"
+    )
+  end
+
+  def call_with_unknown_attempt
+    described_class.call(
+      operation: operation, providers: providers, snapshot: snapshot, policy: policy, attempted: ["unknown"]
+    )
   end
 
   def vipay_provider

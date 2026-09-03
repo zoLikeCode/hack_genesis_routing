@@ -41,6 +41,25 @@ module Routing
       name
     end
 
+    def simulation_seed
+      seed = @data.fetch("simulation_seed", 42)
+      Routing.assert(seed.is_a?(Integer), "simulation_seed must be an Integer")
+      seed
+    end
+
+    def default_requests_per_minute_limit
+      raw = @data["hard_constraints"]
+      return if raw.nil?
+
+      Routing.assert(raw.respond_to?(:to_h), "hard_constraints must be a mapping")
+      limit = stringify_keys(raw.to_h)["default_requests_per_minute_limit"]
+      return if limit.nil?
+
+      Routing.assert(limit.is_a?(Integer) && limit >= 0,
+                     "default_requests_per_minute_limit must be a non-negative integer")
+      limit
+    end
+
     def self.parse(path)
       data = YAML.safe_load_file(path, permitted_classes: [], aliases: false)
       raise InvalidInputError, "#{path}: policy must be a mapping" unless data.is_a?(Hash)
