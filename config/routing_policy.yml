@@ -1,5 +1,11 @@
 fallback_provider: spacepayments
 simulation_seed: 1
+status_check:
+  enabled: true
+  initial_delay_sec: 5
+  retry_delays_sec: [5, 15, 30, 60, 120]
+  max_attempts: 10
+
 hard_constraints:
   default_requests_per_minute_limit: null
 

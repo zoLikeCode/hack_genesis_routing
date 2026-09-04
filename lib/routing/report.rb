@@ -5,21 +5,28 @@ module Routing
     SHARE_GAP = 15
     UTILIZATION_WARN = 80
 
-    def self.call(decisions:, operations:, providers:, policy:, history: nil)
-      new(decisions, operations, providers, policy, history).call
+    def self.call(decisions:, operations:, providers:, policy:, **options)
+      new(decisions, operations, providers, policy, options).call
     end
 
-    def initialize(decisions, operations, providers, policy, history)
+    def initialize(decisions, operations, providers, policy, options)
+      history = options[:history]
+      runtime_state = options[:runtime_state]
+      status_checker = options[:status_checker]
       Routing.assert(decisions.is_a?(Array) && decisions.all?(Decision), "decisions must be Decision objects")
       Routing.assert(operations.respond_to?(:each), "operations must be enumerable")
       Routing.assert(providers.is_a?(ProviderPool), "providers must be a ProviderPool")
       Routing.assert(policy.is_a?(Policy), "policy must be Routing::Policy")
       Routing.assert(history.nil? || history.is_a?(History), "history must be Routing::History")
+      Routing.assert(runtime_state.nil? || runtime_state.is_a?(RuntimeState), "runtime_state must be RuntimeState")
+      Routing.assert(status_checker.nil? || status_checker.is_a?(StatusChecker), "status_checker must be StatusChecker")
       @decisions = decisions
       @operations = operations
       @providers = providers
       @policy = policy
       @history = history
+      @runtime_state = runtime_state
+      @status_checker = status_checker
     end
 
     def call
@@ -34,6 +41,7 @@ module Routing
         "rejected_operations" => rejected_decisions.size,
         "skip_reasons" => skip_reasons,
         "projected_daily_utilization" => projected_daily_utilization,
+        "status_checks" => status_check_summary,
         "recommendations" => recommendations
       }
     end
@@ -87,11 +95,11 @@ module Routing
     end
 
     def accepted_decisions
-      @decisions.reject { |decision| decision.simulated_result == "rejected" }
+      @decisions.reject { |decision| effective_result(decision) == "rejected" }
     end
 
     def rejected_decisions
-      @decisions.select { |decision| decision.simulated_result == "rejected" }
+      @decisions.select { |decision| effective_result(decision) == "rejected" }
     end
 
     def outcomes
@@ -102,7 +110,7 @@ module Routing
 
     def outcome_entry(name)
       final = @decisions.select { |decision| decision.selected_provider == name }
-      counts = final.map(&:simulated_result).tally
+      counts = final.map { |decision| effective_result(decision) }.tally
       cascade_rejections = simulated_skips(name, Simulator::REJECTED)
       cascade_expirations = simulated_skips(name, Simulator::EXPIRED)
       attempted = final.size + cascade_rejections + cascade_expirations
@@ -185,10 +193,32 @@ module Routing
     end
 
     def timeout_recs
-      total = @decisions.count { |decision| decision.simulated_result == "expired" }
+      total = @decisions.count { |decision| effective_result(decision) == "expired" }
       return [] if total.zero?
 
-      ["#{total} operations ended on timeout at the last provider - review fallback conversion or add capacity"]
+      ["#{total} operations await status-check - keep reservations and do not start fallback"]
+    end
+
+    def effective_result(decision)
+      return decision.simulated_result unless decision.simulated_result == "expired" && !@runtime_state.nil?
+
+      reservation = @runtime_state.reservation_for(
+        operation_id: decision.operation_id,
+        provider_name: decision.selected_provider
+      )
+      return decision.simulated_result if reservation.nil? || reservation.timed_out?
+
+      reservation.status
+    end
+
+    def status_check_summary
+      if @status_checker.nil?
+        return {
+          "scheduled" => 0, "checking" => 0, "resolved" => 0, "manual_review" => 0, "tasks" => []
+        }
+      end
+
+      @status_checker.summary
     end
 
     def conversion_recs

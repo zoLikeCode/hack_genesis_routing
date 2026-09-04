@@ -40,6 +40,15 @@ RSpec.describe Routing::Policy do
       expect(policy.default_requests_per_minute_limit).to be_nil
     end
 
+    it "loads status-check scheduling settings", :aggregate_failures do
+      expect(policy.status_check).to include(
+        "enabled" => true,
+        "initial_delay_sec" => 5,
+        "max_attempts" => 10
+      )
+      expect(policy.status_check.fetch("retry_delays_sec")).to eq([5, 15, 30, 60, 120])
+    end
+
     it "raises InvalidInputError when the file is missing" do
       expect { described_class.load("missing-policy.yml") }.to raise_error(Routing::InvalidInputError)
     end
@@ -188,6 +197,25 @@ RSpec.describe Routing::Policy do
       profile_policy_data["provider_profiles"] = { "vipay" => "conversion_first" }
 
       expect(policy.weight_for("conversion", provider: "vipay")).to eq(0.75)
+    end
+  end
+
+  describe "status_check" do
+    it "rejects an empty retry schedule" do
+      expect do
+        described_class.new("status_check" => { "retry_delays_sec" => [] })
+      end.to raise_error(
+        Routing::InvalidInputError,
+        "status_check.retry_delays_sec must be a non-empty list of non-negative numbers"
+      )
+    end
+
+    it "uses safe defaults when the section is omitted", :aggregate_failures do
+      config = described_class.new({}).status_check
+
+      expect(config.fetch("enabled")).to be(true)
+      expect(config.fetch("initial_delay_sec")).to eq(5)
+      expect(config.fetch("max_attempts")).to eq(10)
     end
   end
 end

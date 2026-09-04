@@ -150,6 +150,8 @@
       body { background: #fff; }
       main { max-width: none; padding: 0; }
       .graph-wrap, table, .card, .callout, .stat { break-inside: avoid; }
+      .graph-wrap { overflow: hidden; }
+      .graph-wrap svg { display: block; width: 100%; height: auto; }
       h2 { break-after: avoid; }
     }
   </style>
@@ -174,8 +176,9 @@
       Вызов <code>Engine#route_one</code> снимает снимок живого состояния провайдеров,
       допускает пул по hard-constraints, ранжирует его взвешенными soft-goals,
       резервирует ёмкость относительно той же ревизии снимка и симулирует провайдера.
-      Отказ или таймаут основного провайдера повторяет цикл с его именем в <code>attempted</code>.
-      Пунктир — повтор попытки, а не второй параллельный путь.
+      Явный отказ основного провайдера повторяет цикл с его именем в <code>attempted</code>.
+      Таймаут удерживает reservation и останавливает каскад до status-check. Пунктир —
+      повтор после отказа или устаревшей ревизии, а не второй параллельный путь.
     </p>
 
     <div class="graph-wrap">
@@ -216,7 +219,6 @@
         <g fill="none" stroke="#1f6feb" stroke-width="1.75" stroke-dasharray="5 4" marker-end="url(#arrow-accent)">
           <path d="M 308 612 C 380 612, 380 112, 308 112" />
           <path d="M 308 796 C 400 796, 400 112, 308 112" />
-          <path d="M 508 796 C 430 796, 430 112, 308 112" />
         </g>
         <text x="400" y="360" fill="#1f6feb" font-size="11">повтор</text>
         <text x="408" y="470" fill="#1f6feb" font-size="11">повтор</text>
@@ -330,8 +332,8 @@
         </tr>
         <tr>
           <td><span class="dot dot-warn"></span>expired</td>
-          <td>Снять in-progress и daily_reserved; обнулить pending; не коммитить оборот</td>
-          <td>Как rejected: каскад на следующего, если это не fallback. Иначе стоп с simulated_result expired.</td>
+          <td>Сохранить in-progress, daily_reserved и pending до позднего ответа; пометить reservation как timed_out</td>
+          <td>Временно считать успехом и остановить каскад. Fallback до status-check не запускать.</td>
         </tr>
       </tbody>
     </table>
@@ -342,8 +344,9 @@
       основных провайдеров. Остальные допущенные попадают в <code>attempts</code> как
       <code>lower_soft_score</code>. Fallback (<code>spacepayments</code>) держится вне ранжирования
       и используется, только когда этот набор пуст. Устаревший резерв попытку не тратит:
-      цикл снова снимает снимок с тем же <code>attempted</code>. Отказ и таймаут основного
-      провайдера одинаково исключают его и переходят к следующему.
+      цикл снова снимает снимок с тем же <code>attempted</code>. Явный отказ исключает
+      провайдера и переводит операцию к следующему. Таймаут удерживает reservation и
+      завершает текущий каскад до позднего status-check.
     </div>
 
     <h2>Подключение стратегий</h2>

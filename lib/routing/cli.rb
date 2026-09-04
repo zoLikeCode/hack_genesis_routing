@@ -55,13 +55,16 @@ module Routing
       providers = ProviderPool.load(options[:providers])
       operations = Operation.load_queue(options[:queue])
       history = History.load(options[:history]) if options[:history] && File.exist?(options[:history])
-      decisions = Engine.call(operations: operations, providers: providers, policy: policy)
+      engine = Engine.new(operations, providers, policy)
+      decisions = engine.call
       report = Report.call(
         decisions: decisions,
         operations: operations,
         providers: providers,
         policy: policy,
-        history: history
+        history: history,
+        runtime_state: engine.state,
+        status_checker: engine.status_checker
       )
       JsonFile.write(options[:decisions_out], decisions.map(&:to_h))
       JsonFile.write(options[:report_out], report)

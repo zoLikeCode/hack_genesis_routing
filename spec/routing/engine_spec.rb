@@ -40,7 +40,7 @@ RSpec.describe Routing::Engine do
       expect(decisions.first.simulated_result).to eq("rejected")
     end
 
-    it "cascades to the next eligible provider after a simulated timeout", :aggregate_failures do
+    it "keeps a timed-out provider selected without starting fallback", :aggregate_failures do
       providers = two_primary_pool
       engine = described_class.new(
         [build_operation],
@@ -51,11 +51,55 @@ RSpec.describe Routing::Engine do
 
       decision = engine.call.first
 
-      expect(decision).to have_attributes(selected_provider: "payflow", simulated_result: "approved")
-      expect(decision.attempts).to include(
-        have_attributes(provider: "vipay", decision: "skipped", reason: "simulated_expired")
+      expect(decision).to have_attributes(selected_provider: "vipay", simulated_result: "expired")
+      expect(decision.attempts.count { |attempt| attempt.decision == "selected" }).to eq(1)
+      expect(decision.attempts.last.details).to include("timeout reservation retained")
+      expect(engine.state.reservations.first.status).to eq("timed_out")
+      expect(providers.fetch("vipay").in_progress_count).to eq(1)
+    end
+
+    it "applies a late timeout cancellation only to current state", :aggregate_failures do
+      providers = two_primary_pool
+      engine = described_class.new(
+        [build_operation],
+        providers,
+        build_policy("cascade_priority" => { "enabled" => true, "weight" => 1.0 }),
+        sequenced_simulator(%w[expired])
       )
+      decision = engine.call.first
+
+      engine.state.resolve_timeout!(
+        operation_id: decision.operation_id,
+        provider_name: decision.selected_provider,
+        result: "cancelled"
+      )
+
+      expect(decision.simulated_result).to eq("expired")
+      expect(engine.state.snapshot.soft_goals.total_count).to eq(0)
       expect(providers.fetch("vipay").in_progress_count).to eq(0)
+    end
+
+    it "runs due status checks before routing the next online operation", :aggregate_failures do
+      providers = two_primary_pool
+      client = status_client(call_results: %w[expired approved], status_results: %w[cancelled])
+      policy = Routing::Policy.new(
+        "status_check" => status_check_config,
+        "strategies" => { "cascade_priority" => { "enabled" => true, "weight" => 1.0 } }
+      )
+      operations = [
+        build_operation(operation_id: "timed_out"),
+        build_operation(operation_id: "next", created_at: "2026-07-30T09:06:00+03:00")
+      ]
+
+      engine = described_class.new(operations, providers, policy, client)
+      decisions = engine.call
+
+      expect(decisions.first).to have_attributes(selected_provider: "vipay", simulated_result: "expired")
+      expect(decisions.last).to have_attributes(selected_provider: "vipay", simulated_result: "approved")
+      expect(client.status_requests).to eq([["timed_out", "timed_out:vipay"]])
+      expect(engine.status_checker.tasks.first).to have_attributes(status: "resolved", last_result: "rejected")
+      reservation = engine.state.reservation_for(operation_id: "timed_out", provider_name: "vipay")
+      expect(reservation.status).to eq("rejected")
     end
 
     it "records eligible providers that lost the soft-score comparison" do
@@ -281,6 +325,30 @@ RSpec.describe Routing::Engine do
       simulator = Object.new
       simulator.define_singleton_method(:call) { |_provider| queue.shift }
       simulator
+    end
+
+    def status_client(call_results:, status_results:)
+      calls = call_results.dup
+      statuses = status_results.dup
+      client = Object.new
+      client.define_singleton_method(:status_requests) { @status_requests ||= [] }
+      client.define_singleton_method(:call) do |_provider, **|
+        { result: calls.shift || "approved", latency_sec: 0 }
+      end
+      client.define_singleton_method(:status) do |_provider, operation_id:, idempotency_key:|
+        status_requests << [operation_id, idempotency_key]
+        { result: statuses.shift || "pending" }
+      end
+      client
+    end
+
+    def status_check_config
+      {
+        "enabled" => true,
+        "initial_delay_sec" => 5,
+        "retry_delays_sec" => [10],
+        "max_attempts" => 3
+      }
     end
   end
 end

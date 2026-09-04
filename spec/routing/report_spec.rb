@@ -82,4 +82,33 @@ RSpec.describe Routing::Report do
 
     expect(report_with_history.dig("history_baseline", "vipay", "conversion")).to be_between(0, 1)
   end
+
+  it "uses a resolved timeout status for final traffic share", :aggregate_failures do
+    operation = build_operation
+    state = Routing::RuntimeState.new(pool)
+    reservation = state.try_reserve!(vipay, operation, expected_revision: state.snapshot.revision).reservation
+    state.mark_timeout!(reservation)
+    state.resolve_timeout!(operation_id: operation.id, provider_name: vipay.name, result: "cancelled")
+    resolved_report = described_class.call(
+      decisions: [expired_decision(operation, vipay)],
+      operations: [operation],
+      providers: pool,
+      policy: build_policy,
+      runtime_state: state
+    )
+
+    expect(resolved_report.dig("distribution", "vipay", "count")).to eq(0)
+    expect(resolved_report.dig("outcomes", "vipay", "rejected")).to eq(1)
+    expect(resolved_report.fetch("rejected_operations")).to eq(1)
+  end
+
+  def expired_decision(operation, provider)
+    Routing::Decision.new(
+      operation_id: operation.id,
+      selected_provider: provider.name,
+      attempts: [],
+      simulated_result: "expired",
+      latency_sec: 30
+    )
+  end
 end

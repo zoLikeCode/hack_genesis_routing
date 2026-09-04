@@ -19,7 +19,7 @@ module Routing
     private_class_method :score_details
 
     def self.outcome_details(result)
-      return "reservation rolled back after timeout" if result == "expired"
+      return "timeout reservation retained pending status-check" if result == "expired"
 
       "reservation rolled back after explicit rejection" if result == "rejected"
     end

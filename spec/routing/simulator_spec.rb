@@ -33,4 +33,17 @@ RSpec.describe Routing::Simulator do
     provider = build_provider(conversion_24h: 1.0, avg_latency_sec: 38)
     expect(simulator.call(provider).fetch(:latency_sec)).to eq(38)
   end
+
+  it "returns a stable terminal status for a timed-out payout", :aggregate_failures do
+    simulator = described_class.new(seed: 4)
+    provider = build_provider(conversion_24h: 0)
+    outcome = simulator.call(provider, operation: build_operation, idempotency_key: "op_test:vipay")
+
+    first = simulator.status(provider, operation_id: "op_test", idempotency_key: "op_test:vipay")
+    second = simulator.status(provider, operation_id: "op_test", idempotency_key: "op_test:vipay")
+
+    expect(outcome.fetch(:result)).to eq("expired")
+    expect(first).to eq(result: "rejected")
+    expect(second).to eq(first)
+  end
 end

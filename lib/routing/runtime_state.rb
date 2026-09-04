@@ -109,22 +109,25 @@ module Routing
     def resolve_timeout!(operation_id:, provider_name:, result:)
       Routing.assert(operation_id.is_a?(String) && !operation_id.empty?, "operation id required")
       Routing.assert(provider_name.is_a?(String) && !provider_name.empty?, "provider name required")
+      settlement = timeout_settlement(result)
       key = "#{operation_id}:#{provider_name}"
-      reservation = @mutex.synchronize do
+      @mutex.synchronize do
         found = @reservations[key]
         Routing.assert(!found.nil?, "unknown reservation #{key}")
+        return found unless found.active?
+
         Routing.assert(found.timed_out?, "reservation #{key} is not timed out")
-        found
+        settle_active!(found, settlement)
       end
-
-      return approve!(reservation) if result == "approved"
-      return reject!(reservation) if %w[rejected cancelled].include?(result)
-
-      Routing.assert(false, "unsupported timeout resolution #{result}")
     end
 
     def reservations
       @mutex.synchronize { @reservations.values.dup.freeze }
+    end
+
+    def reservation_for(operation_id:, provider_name:)
+      key = "#{operation_id}:#{provider_name}"
+      @mutex.synchronize { @reservations[key] }
     end
 
     private
@@ -140,21 +143,32 @@ module Routing
       Routing.assert(%w[approved rejected].include?(result), "unsupported settlement #{result}")
       @mutex.synchronize do
         stored = active_reservation!(reservation)
-        provider = @providers.fetch(stored.provider_name)
-        provider.release!(stored.amount)
-        @pending_counts[provider.name] -= 1
-        Routing.assert(@pending_counts[provider.name] >= 0, "pending selection count became negative")
-
-        if result == "approved"
-          provider.commit_approved!(stored.amount)
-          @committed_counts[provider.name] += 1
-          stored.approve!
-        else
-          stored.reject!
-        end
-        bump_revision!
-        stored
+        settle_active!(stored, result)
       end
+    end
+
+    def settle_active!(stored, result)
+      provider = @providers.fetch(stored.provider_name)
+      provider.release!(stored.amount)
+      @pending_counts[provider.name] -= 1
+      Routing.assert(@pending_counts[provider.name] >= 0, "pending selection count became negative")
+
+      if result == "approved"
+        provider.commit_approved!(stored.amount)
+        @committed_counts[provider.name] += 1
+        stored.approve!
+      else
+        stored.reject!
+      end
+      bump_revision!
+      stored
+    end
+
+    def timeout_settlement(result)
+      return "approved" if result == "approved"
+      return "rejected" if %w[rejected cancelled].include?(result)
+
+      Routing.assert(false, "unsupported timeout resolution #{result}")
     end
 
     def active_reservation!(reservation)

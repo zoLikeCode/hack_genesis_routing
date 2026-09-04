@@ -81,7 +81,7 @@ RSpec.describe Routing::RuntimeState do
   it "commits a late timeout approval exactly once", :aggregate_failures do
     reservation = reserve
     state.mark_timeout!(reservation)
-    state.resolve_timeout!(operation_id: operation.id, provider_name: provider.name, result: "approved")
+    resolve_timeout("approved")
 
     expect(reservation.status).to eq("approved")
     expect(state.snapshot.soft_goals.count("vipay")).to eq(1)
@@ -90,9 +90,12 @@ RSpec.describe Routing::RuntimeState do
       daily_reserved_amount: 0,
       daily_approved_amount: 15_000
     )
-    expect do
-      state.resolve_timeout!(operation_id: operation.id, provider_name: provider.name, result: "approved")
-    end.to raise_error(Routing::InvariantError, /is not timed out/)
+    repeated = resolve_timeout("approved")
+    conflicting = resolve_timeout("cancelled")
+
+    expect(repeated).to equal(reservation)
+    expect(conflicting).to equal(reservation)
+    expect(pool.fetch("vipay").daily_approved_amount).to eq(15_000)
   end
 
   it "rechecks hard constraints inside the reservation boundary", :aggregate_failures do
@@ -106,5 +109,9 @@ RSpec.describe Routing::RuntimeState do
 
   def reserve
     state.try_reserve!(provider, operation, expected_revision: state.snapshot.revision).reservation
+  end
+
+  def resolve_timeout(result)
+    state.resolve_timeout!(operation_id: operation.id, provider_name: provider.name, result: result)
   end
 end

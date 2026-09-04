@@ -4,7 +4,7 @@ module Routing
   class Engine
     FALLBACK_SELECTED = "fallback_selected"
 
-    attr_reader :state
+    attr_reader :state, :status_checker
 
     def self.call(operations:, providers:, policy:, simulator: nil, state: nil)
       new(operations, providers, policy, simulator, state: state).call
@@ -22,6 +22,7 @@ module Routing
       @state = state || RuntimeState.new(providers)
       Routing.assert(@state.is_a?(RuntimeState), "state must be Routing::RuntimeState")
       Routing.assert(@state.providers.equal?(providers), "runtime state must own the provider pool")
+      @status_checker = build_status_checker
       @processed_ids = {}
       @last_created_at = nil
     end
@@ -32,6 +33,7 @@ module Routing
 
     def route_one(operation)
       validate_online_operation!(operation)
+      run_due_status_checks(operation)
       decision = route(operation)
       @processed_ids[operation.id] = true
       @last_created_at = operation.created_at unless operation.created_at.nil?
@@ -39,6 +41,15 @@ module Routing
     end
 
     private
+
+    def build_status_checker
+      StatusChecker.new(
+        state: @state,
+        providers: @providers,
+        client: @simulator,
+        config: @policy.status_check
+      )
+    end
 
     def apply_default_requests_per_minute_limit!
       limit = @policy.default_requests_per_minute_limit
@@ -96,6 +107,11 @@ module Routing
       result = outcome.fetch(:result)
       if result == "approved"
         @state.approve!(reservation)
+        return complete(operation, selection, context, outcome)
+      end
+      if result == "expired"
+        @state.mark_timeout!(reservation)
+        @status_checker.schedule(reservation, timed_out_at: timeout_time(operation, context))
         return complete(operation, selection, context, outcome)
       end
 
@@ -165,6 +181,16 @@ module Routing
       return if @last_created_at.nil? || operation.created_at.nil? || operation.created_at >= @last_created_at
 
       raise InvalidInputError, "operations must be ordered by created_at"
+    end
+
+    def run_due_status_checks(operation)
+      @status_checker.run_due(now: operation.created_at) unless operation.created_at.nil?
+    end
+
+    def timeout_time(operation, context)
+      return Time.now if operation.created_at.nil?
+
+      operation.created_at + context.total_latency
     end
 
     def record_considered_skips!(selection, context)

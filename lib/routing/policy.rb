@@ -4,7 +4,7 @@ require "yaml"
 
 module Routing
   class Policy
-    attr_reader :active_profile, :provider_profiles
+    attr_reader :active_profile, :provider_profiles, :status_check
 
     def self.load(path)
       new(parse(path))
@@ -21,6 +21,7 @@ module Routing
       @profiles = normalize_profiles(@data.fetch("profiles", {}))
       @active_profile = normalize_active_profile(@data["active_profile"])
       @provider_profiles = normalize_provider_profiles(@data.fetch("provider_profiles", {}))
+      @status_check = normalize_status_check(@data.fetch("status_check", {}))
       validate_strategy_source!
       @active_strategies = resolve_active_strategies
     end
@@ -152,6 +153,44 @@ module Routing
         end
         [provider, profile]
       end.freeze
+    end
+
+    def normalize_status_check(raw)
+      input_error!("status_check must be a mapping") unless raw.respond_to?(:to_h)
+      data = stringify_keys(raw.to_h)
+      enabled = data.fetch("enabled", true)
+      initial_delay = data.fetch("initial_delay_sec", 5)
+      retry_delays = data.fetch("retry_delays_sec", [5, 15, 30, 60, 120])
+      max_attempts = data.fetch("max_attempts", 10)
+      validate_status_check!(enabled, initial_delay, retry_delays, max_attempts)
+
+      {
+        "enabled" => enabled,
+        "initial_delay_sec" => initial_delay,
+        "retry_delays_sec" => retry_delays.dup.freeze,
+        "max_attempts" => max_attempts
+      }.freeze
+    end
+
+    def validate_status_check!(enabled, initial_delay, retry_delays, max_attempts)
+      input_error!("status_check.enabled must be true or false") unless [true, false].include?(enabled)
+      input_error!("status_check.initial_delay_sec must be non-negative") unless non_negative_number?(initial_delay)
+      unless valid_retry_delays?(retry_delays)
+        input_error!("status_check.retry_delays_sec must be a non-empty list of non-negative numbers")
+      end
+      return if max_attempts.is_a?(Integer) && max_attempts.positive?
+
+      input_error!("status_check.max_attempts must be a positive integer")
+    end
+
+    def valid_retry_delays?(retry_delays)
+      retry_delays.is_a?(Array) && !retry_delays.empty? && retry_delays.all? do |delay|
+        non_negative_number?(delay)
+      end
+    end
+
+    def non_negative_number?(value)
+      value.is_a?(Numeric) && value >= 0
     end
 
     def validate_strategy_source!

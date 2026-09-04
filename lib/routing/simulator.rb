@@ -8,13 +8,27 @@ module Routing
     def initialize(seed:)
       Routing.assert(seed.is_a?(Integer), "simulation seed must be an Integer")
       @rng = Random.new(seed)
+      @status_rng = Random.new(seed ^ 0x5A17)
+      @status_results = {}
     end
 
     def call(provider, operation: nil, idempotency_key: nil)
       Routing.assert(provider.is_a?(Provider), "provider must be Routing::Provider")
       Routing.assert(operation.nil? || operation.is_a?(Operation), "operation must be Routing::Operation")
       Routing.assert(idempotency_key.nil? || !idempotency_key.empty?, "idempotency key must not be empty")
-      { result: roll_result(conversion_for(provider)), latency_sec: latency_for(provider) }
+      conversion = conversion_for(provider)
+      result = roll_result(conversion)
+      remember_timeout(idempotency_key, conversion) if result == "expired" && !idempotency_key.nil?
+      { result: result, latency_sec: latency_for(provider) }
+    end
+
+    def status(provider, operation_id:, idempotency_key:)
+      Routing.assert(provider.is_a?(Provider), "provider must be Routing::Provider")
+      Routing.assert(operation_id.is_a?(String) && !operation_id.empty?, "operation id required")
+      Routing.assert(idempotency_key.is_a?(String) && !idempotency_key.empty?, "idempotency key required")
+      result = @status_results[idempotency_key]
+      Routing.assert(!result.nil?, "unknown simulated payout #{idempotency_key}")
+      { result: result }
     end
 
     private
@@ -40,6 +54,10 @@ module Routing
       return 0 if value.nil?
 
       value.round
+    end
+
+    def remember_timeout(idempotency_key, conversion)
+      @status_results[idempotency_key] ||= @status_rng.rand < conversion ? "approved" : "rejected"
     end
   end
 end
