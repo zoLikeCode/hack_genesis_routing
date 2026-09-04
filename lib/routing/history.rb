@@ -43,15 +43,19 @@ module Routing
     private_class_method :aggregate
 
     def self.empty_totals
-      { "count" => 0, "approved_count" => 0, "volume" => 0, "latency_sum" => 0 }
+      { "count" => 0, "approved_count" => 0, "attempted_volume" => 0, "approved_volume" => 0, "latency_sum" => 0 }
     end
     private_class_method :empty_totals
 
     def self.record_row(totals, row)
       totals["count"] += 1
-      totals["volume"] += number(row["amount"], "amount")
+      amount = number(row["amount"], "amount")
+      totals["attempted_volume"] += amount
       totals["latency_sum"] += number(row["latency_sec"], "latency_sec")
-      totals["approved_count"] += 1 if row["status"] == "approved"
+      return unless row["status"] == "approved"
+
+      totals["approved_count"] += 1
+      totals["approved_volume"] += amount
     end
     private_class_method :record_row
 
@@ -60,7 +64,8 @@ module Routing
       {
         "count" => count,
         "approved_count" => totals.fetch("approved_count"),
-        "volume" => totals.fetch("volume"),
+        "volume" => totals.fetch("approved_volume"),
+        "attempted_volume" => totals.fetch("attempted_volume"),
         "conversion" => count.zero? ? 0.0 : totals.fetch("approved_count").to_f / count,
         "avg_latency_sec" => count.zero? ? 0.0 : totals.fetch("latency_sum").to_f / count
       }

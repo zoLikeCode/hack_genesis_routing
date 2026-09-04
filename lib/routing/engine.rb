@@ -4,111 +4,167 @@ module Routing
   class Engine
     FALLBACK_SELECTED = "fallback_selected"
 
-    def self.call(operations:, providers:, policy:, simulator: nil)
-      new(operations, providers, policy, simulator).call
+    attr_reader :state
+
+    def self.call(operations:, providers:, policy:, simulator: nil, state: nil)
+      new(operations, providers, policy, simulator, state: state).call
     end
 
-    def initialize(operations, providers, policy, simulator)
+    def initialize(operations, providers, policy, simulator = nil, state: nil)
       Routing.assert(operations.respond_to?(:each), "operations must be enumerable")
       Routing.assert(providers.is_a?(ProviderPool), "providers must be a ProviderPool")
       Routing.assert(policy.is_a?(Policy), "policy must be Routing::Policy")
       @operations = operations
       @providers = providers
       @policy = policy
+      apply_default_requests_per_minute_limit!
       @simulator = simulator || Simulator.new(seed: policy.simulation_seed)
-      @snapshot = SoftGoals::Snapshot.from_providers(providers)
+      @state = state || RuntimeState.new(providers)
+      Routing.assert(@state.is_a?(RuntimeState), "state must be Routing::RuntimeState")
+      Routing.assert(@state.providers.equal?(providers), "runtime state must own the provider pool")
+      @processed_ids = {}
+      @last_created_at = nil
     end
 
     def call
-      @operations.map { |operation| route(operation) }
+      @operations.each_with_object([]) { |operation, decisions| decisions << route_one(operation) }
+    end
+
+    def route_one(operation)
+      validate_online_operation!(operation)
+      decision = route(operation)
+      @processed_ids[operation.id] = true
+      @last_created_at = operation.created_at unless operation.created_at.nil?
+      decision
     end
 
     private
 
+    def apply_default_requests_per_minute_limit!
+      limit = @policy.default_requests_per_minute_limit
+      @providers.apply_default_requests_per_minute_limit!(limit) unless limit.nil?
+    end
+
     def route(operation)
       Routing.assert(operation.is_a?(Operation), "operation must be Routing::Operation")
-      attempts = []
-      attempted = []
+      context = RouteContext.new
 
       loop do
-        selection = pick(operation, attempted)
-        merge_skips(attempts, selection.evaluation.skipped)
-        return unroutable(operation, attempts) unless selection.routable?
-
-        decision = try_selection(operation, selection, attempts)
+        decision = route_attempt(operation, context)
         return decision if decision
-
-        attempted += [selection.provider.name]
       end
     end
 
-    def pick(operation, attempted)
-      Router.call(
-        operation: operation,
-        providers: @providers,
-        snapshot: @snapshot,
-        policy: @policy,
-        attempted: attempted
+    def route_attempt(operation, context)
+      selection, runtime_snapshot = pick(operation, context.attempted)
+      return resolve_unroutable(operation, selection, runtime_snapshot, context) unless selection.routable?
+
+      reserved = reserve(selection, operation, runtime_snapshot)
+      return if reserved.stale?
+
+      context.merge_skips!(selection.evaluation.skipped)
+      return reservation_failed(selection, reserved, context) unless reserved.reserved?
+
+      outcome = simulate_try(selection.provider, operation, reserved.reservation)
+      context.add_latency!(outcome.fetch(:latency_sec))
+      decision = apply_outcome(operation, selection, context, outcome, reserved.reservation)
+      context.mark_attempted!(selection.provider.name) if decision.nil?
+      decision
+    end
+
+    def reserve(selection, operation, runtime_snapshot)
+      @state.try_reserve!(
+        selection.provider,
+        operation,
+        expected_revision: runtime_snapshot.revision
       )
     end
 
-    def try_selection(operation, selection, attempts)
-      outcome = simulate_try(selection.provider, operation)
-      return complete(operation, selection, attempts, outcome) if keep_selection?(selection, outcome)
+    def pick(operation, attempted)
+      runtime_snapshot = @state.snapshot
+      selection = Router.call(
+        operation: operation,
+        providers: runtime_snapshot.providers,
+        snapshot: runtime_snapshot.soft_goals,
+        policy: @policy,
+        attempted: attempted
+      )
+      [selection, runtime_snapshot]
+    end
 
-      attempts << skip_attempt(selection.provider.name, simulation_reason(outcome.fetch(:result)), nil)
+    def apply_outcome(operation, selection, context, outcome, reservation)
+      result = outcome.fetch(:result)
+      if result == "approved"
+        @state.approve!(reservation)
+        return complete(operation, selection, context, outcome)
+      end
+      if result == "expired"
+        @state.mark_timeout!(reservation)
+        return complete(operation, selection, context, outcome)
+      end
+
+      @state.reject!(reservation)
+      return complete(operation, selection, context, outcome) if selection.fallback?
+
+      context.add_attempt!(skip_attempt(selection.provider.name, simulation_reason(result), nil))
       nil
     end
 
-    def keep_selection?(selection, outcome)
-      selection.fallback? || outcome.fetch(:result) == "approved"
+    def simulate_try(provider, operation, reservation)
+      ProviderInvoker.call(
+        client: @simulator,
+        provider: provider,
+        operation: operation,
+        reservation: reservation
+      )
+    rescue StandardError
+      @state.reject!(reservation) if reservation.active?
+      raise
     end
 
-    def simulate_try(provider, operation)
-      @providers.reserve!(provider, operation)
-      outcome = @simulator.call(provider)
-      @providers.release!(provider, operation.amount)
-      outcome
-    end
-
-    def complete(operation, selection, attempts, outcome)
+    def complete(operation, selection, context, outcome)
       provider = selection.provider
-      if outcome.fetch(:result) == "approved"
-        @providers.commit_approved!(provider, operation.amount)
-        @snapshot.record!(provider.name, operation.amount)
-      end
-      attempts << HardConstraints::Attempt.new(
-        provider: provider.name,
-        decision: "selected",
-        reason: selected_reason(selection),
-        details: selected_details(selection.ranking)
+      context.add_attempt!(
+        HardConstraints::Attempt.new(
+          provider: provider.name,
+          decision: "selected",
+          reason: selected_reason(selection),
+          details: DecisionExplainer.details(
+            selection: selection,
+            policy: @policy,
+            result: outcome.fetch(:result)
+          )
+        )
       )
       Decision.new(
         operation_id: operation.id,
         selected_provider: provider.name,
-        attempts: attempts,
+        attempts: context.attempts,
         simulated_result: outcome.fetch(:result),
-        latency_sec: outcome.fetch(:latency_sec)
+        latency_sec: context.total_latency
       )
     end
 
-    def unroutable(operation, attempts)
-      Decision.new(
-        operation_id: operation.id,
-        selected_provider: @policy.fallback_provider,
-        attempts: attempts,
-        simulated_result: "rejected",
-        latency_sec: 0
-      )
+    def resolve_unroutable(operation, selection, runtime_snapshot, context)
+      return unless @state.current_revision?(runtime_snapshot.revision)
+
+      context.merge_skips!(selection.evaluation.skipped)
+      raise InvalidInputError,
+            "operation #{operation.id} cannot be routed without violating hard constraints"
     end
 
-    def merge_skips(attempts, skipped)
-      seen = attempts.map { |attempt| [attempt.provider, attempt.reason] }
-      skipped.each do |attempt|
-        next if seen.include?([attempt.provider, attempt.reason])
+    def reservation_failed(selection, reserved, context)
+      context.add_attempt!(skip_attempt(selection.provider.name, reserved.reason, reserved.details))
+      context.mark_attempted!(selection.provider.name)
+      nil
+    end
 
-        attempts << attempt
-      end
+    def validate_online_operation!(operation)
+      Routing.assert(operation.is_a?(Operation), "operation must be Routing::Operation")
+      raise InvalidInputError, "duplicate operation_id #{operation.id}" if @processed_ids.key?(operation.id)
+      return if @last_created_at.nil? || operation.created_at.nil? || operation.created_at >= @last_created_at
+
+      raise InvalidInputError, "operations must be ordered by created_at"
     end
 
     def skip_attempt(name, reason, details)
@@ -126,13 +182,6 @@ module Routing
       return FALLBACK_SELECTED if selection.fallback?
 
       selection.ranking.scores.fetch(selection.provider.name).reason
-    end
-
-    def selected_details(ranking)
-      return ranking.notes.join("; ") unless ranking.notes.empty?
-
-      kinds = ranking.conflicts.map(&:kind).uniq
-      kinds.join("; ") unless kinds.empty?
     end
   end
 end

@@ -37,15 +37,38 @@ Enable YJIT in the CLI via `RUBY_YJIT_ENABLE=1` (already defaulted in `bin/route
 
 `config/routing_policy.yml` supports two mutually exclusive modes:
 
-1. Individual mode: keep `active_profile: null` and set `strategies.<name>.enabled: true` for each required strategy.
-2. Profile mode: set every individual `enabled` flag to `false` and set `active_profile` to a name from `profiles`.
+1. Individual mode: keep `active_profile: null`, omit `provider_profiles`, and enable the required direct strategies.
+2. Profile mode: disable every direct strategy, set `active_profile` as the default, and optionally assign profiles through
+   `provider_profiles.<payment_system>`.
 
 Each profile contains its own strategy combination and weights. Strategies listed inside a profile are enabled automatically.
-The application rejects an unknown profile and rejects a selected profile when at least one individual strategy is enabled.
+The application rejects unknown profiles and any attempt to mix profiles with directly enabled strategies. The supplied policy
+uses provider-specific profiles calibrated from the provider rules and the historical conversion/latency baseline.
 
 `Routing::Router` always applies every hard constraint before ranking. The eligible fallback is kept outside soft-goal
-ranking and is selected only when no untried external provider remains. `Routing::Engine` walks the operations queue,
-calls Router for each pick, simulates the attempt, and retries with `attempted` on refusal.
+ranking and is selected only when no untried external provider remains.
+
+### Online state and fallback
+
+`Routing::Engine#route_one` processes one operation at a time and rejects duplicate IDs or timestamps older than the last
+processed operation. The JSON queue is only a chronological replay adapter; future operations are never used for scoring or
+capacity reservation.
+
+Before every routing attempt, `Routing::RuntimeState` creates a point-in-time snapshot with a revision. The selected provider is
+reserved atomically against that revision and the unchanged hard constraints are checked again inside the reservation boundary.
+Pending count, volume, daily capacity, and in-progress load are visible to subsequent snapshots.
+
+- `approved`: convert the pending reservation into committed traffic and approved turnover;
+- `rejected`: roll back provisional counters and reroute through the next eligible provider on a fresh snapshot;
+- `expired`: keep the reservation, treat the provider as the current final selection, and do not start fallback before a
+  status-check;
+- late cancellation: call `RuntimeState#resolve_timeout!` to compensate current counters without replaying earlier decisions.
+
+Every provider attempt receives a stable `<operation_id>:<provider>` idempotency key when the provider client accepts keyword
+context. Decision details include the selected provider profile, total score, and weighted soft-goal contributions.
+
+Historical rows are not mixed into the test queue traffic denominator. They are included separately in
+`routing_report_test.json` as a baseline for conversion, latency, approved volume, and profile-weight recommendations.
 
 ### Layout
 

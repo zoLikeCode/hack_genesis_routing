@@ -22,17 +22,42 @@ RSpec.describe Routing::SoftGoals::Snapshot do
     end
   end
 
-  describe "#record!" do
+  describe "#record_selection!" do
     subject(:snapshot) { described_class.new(counts: { "vipay" => 1 }, volumes: { "vipay" => 10_000 }) }
 
-    before { snapshot.record!("payflow", 30_000) }
+    before { snapshot.record_selection!("payflow") }
 
-    it "updates count percentages" do
+    it "updates count percentages without changing volumes", :aggregate_failures do
       expect(snapshot.count_share_pct("vipay")).to eq(50.0)
+      expect(snapshot.total_volume).to eq(10_000)
+    end
+  end
+
+  describe "#record_approved_volume!" do
+    subject(:snapshot) { described_class.new(counts: { "vipay" => 1 }, volumes: { "vipay" => 10_000 }) }
+
+    before { snapshot.record_approved_volume!("payflow", 30_000) }
+
+    it "updates volume percentages without changing counts", :aggregate_failures do
+      expect(snapshot.volume_share_pct("payflow")).to eq(75.0)
+      expect(snapshot.total_count).to eq(1)
+    end
+  end
+
+  describe "#record!" do
+    subject(:snapshot) { described_class.new }
+
+    it "keeps the combined update available", :aggregate_failures do
+      snapshot.record!("payflow", 30_000)
+
+      expect(snapshot.count("payflow")).to eq(1)
+      expect(snapshot.volume("payflow")).to eq(30_000)
     end
 
-    it "updates volume percentages" do
-      expect(snapshot.volume_share_pct("payflow")).to eq(75.0)
+    it "does not partially update when the amount is invalid", :aggregate_failures do
+      expect { snapshot.record!("payflow", -1) }.to raise_error(Routing::InvariantError)
+
+      expect(snapshot.count("payflow")).to eq(0)
     end
   end
 end

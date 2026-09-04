@@ -35,3 +35,6 @@ Style/StringLiterals:
 Style/FrozenStringLiteralComment:
   Enabled: true
   EnforcedStyle: always
+
+RSpec/ExampleLength:
+  Max: 20

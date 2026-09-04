@@ -15,6 +15,12 @@ RSpec.describe Routing::Provider do
       provider.reserve!(15_000, at: at)
       expect(provider.request_count_at(at)).to eq(1)
     end
+
+    it "reserves daily capacity before the provider request" do
+      provider.reserve!(15_000, at: at)
+
+      expect(provider).to have_attributes(daily_reserved_amount: 15_000, daily_approved_amount: 15_000)
+    end
   end
 
   describe "#release!" do
@@ -23,7 +29,12 @@ RSpec.describe Routing::Provider do
     it "decrements in-progress load" do
       provider.reserve!(15_000, at: at)
       provider.release!(15_000)
-      expect(provider).to have_attributes(in_progress_count: 0, in_progress_amount: 0)
+      expect(provider).to have_attributes(
+        in_progress_count: 0,
+        in_progress_amount: 0,
+        daily_reserved_amount: 0,
+        daily_approved_amount: 0
+      )
     end
 
     it "rejects release without a matching reserve" do

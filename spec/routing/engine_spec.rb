@@ -33,6 +33,155 @@ RSpec.describe Routing::Engine do
       expect(fallback_decision.attempts.map(&:reason)).to include("fallback_selected")
     end
 
+    it "rolls a rejected final fallback out of traffic share", :aggregate_failures do
+      decisions = rejected_fallback_decisions
+
+      expect(decisions.map(&:selected_provider)).to eq(%w[spacepayments vipay payflow])
+      expect(decisions.first.simulated_result).to eq("rejected")
+    end
+
+    it "keeps a timed-out provider selected without starting fallback", :aggregate_failures do
+      providers = two_primary_pool
+      engine = described_class.new(
+        [build_operation],
+        providers,
+        build_policy("cascade_priority" => { "enabled" => true, "weight" => 1.0 }),
+        sequenced_simulator(%w[expired approved])
+      )
+
+      decision = engine.call.first
+
+      expect(decision).to have_attributes(selected_provider: "vipay", simulated_result: "expired")
+      expect(decision.attempts.count { |attempt| attempt.decision == "selected" }).to eq(1)
+      expect(decision.attempts.last.details).to include("timeout reservation retained")
+      expect(engine.state.reservations.first.status).to eq("timed_out")
+      expect(providers.fetch("vipay").in_progress_count).to eq(1)
+    end
+
+    it "applies a late timeout cancellation only to current state", :aggregate_failures do
+      providers = two_primary_pool
+      engine = described_class.new(
+        [build_operation],
+        providers,
+        build_policy("cascade_priority" => { "enabled" => true, "weight" => 1.0 }),
+        sequenced_simulator(%w[expired])
+      )
+      decision = engine.call.first
+
+      engine.state.resolve_timeout!(
+        operation_id: decision.operation_id,
+        provider_name: decision.selected_provider,
+        result: "cancelled"
+      )
+
+      expect(decision.simulated_result).to eq("expired")
+      expect(engine.state.snapshot.soft_goals.total_count).to eq(0)
+      expect(providers.fetch("vipay").in_progress_count).to eq(0)
+    end
+
+    it "adds latency across rejected cascade attempts" do
+      decision = described_class.call(
+        operations: [build_operation],
+        providers: two_primary_pool,
+        policy: build_policy,
+        simulator: outcome_simulator(
+          [
+            { result: "rejected", latency_sec: 11 },
+            { result: "approved", latency_sec: 17 }
+          ]
+        )
+      ).first
+
+      expect(decision.latency_sec).to eq(28)
+    end
+
+    it "rejects out-of-order online operations" do
+      operations = [
+        build_operation(operation_id: "later", created_at: "2026-07-30T09:06:00+03:00"),
+        build_operation(operation_id: "earlier", created_at: "2026-07-30T09:05:00+03:00")
+      ]
+
+      expect do
+        described_class.call(
+          operations: operations,
+          providers: two_primary_pool,
+          policy: build_policy,
+          simulator: sequenced_simulator(%w[approved approved])
+        )
+      end.to raise_error(Routing::InvalidInputError, "operations must be ordered by created_at")
+    end
+
+    it "rejects a duplicate operation in the online stream" do
+      operation = build_operation
+      engine = described_class.new(
+        [],
+        two_primary_pool,
+        build_policy,
+        sequenced_simulator(%w[approved approved])
+      )
+      engine.route_one(operation)
+
+      expect { engine.route_one(operation) }.to raise_error(
+        Routing::InvalidInputError,
+        "duplicate operation_id op_test"
+      )
+    end
+
+    it "releases a reservation when the provider client raises", :aggregate_failures do
+      providers = two_primary_pool
+      simulator = Object.new
+      simulator.define_singleton_method(:call) { |_provider| raise IOError, "provider unavailable" }
+
+      expect do
+        described_class.call(
+          operations: [build_operation],
+          providers: providers,
+          policy: build_policy,
+          simulator: simulator
+        )
+      end.to raise_error(IOError, "provider unavailable")
+      expect(providers.fetch("vipay")).to have_attributes(in_progress_count: 0, daily_reserved_amount: 0)
+    end
+
+    it "sends a stable attempt idempotency key to keyword-aware provider clients" do
+      received = []
+      simulator = Object.new
+      simulator.define_singleton_method(:call) do |provider, operation:, idempotency_key:|
+        received << [provider.name, operation.id, idempotency_key]
+        { result: "approved", latency_sec: 1 }
+      end
+
+      described_class.call(
+        operations: [build_operation],
+        providers: two_primary_pool,
+        policy: build_policy,
+        simulator: simulator
+      )
+
+      expect(received).to eq([["vipay", "op_test", "op_test:vipay"]])
+    end
+
+    it "never claims an ineligible fallback was selected" do
+      providers = Routing::ProviderPool.new(
+        [
+          build_provider(status: "disabled"),
+          fallback_provider(status: "disabled")
+        ]
+      )
+
+      expect do
+        described_class.call(
+          operations: [build_operation],
+          providers: providers,
+          policy: build_policy,
+          simulator: sequenced_simulator(%w[approved])
+        )
+      end.to raise_error(
+        Routing::InvalidInputError,
+        "operation op_test cannot be routed without violating hard constraints"
+      )
+    end
+
     def cascade_decision
       described_class.call(
         operations: [build_operation],
@@ -40,6 +189,33 @@ RSpec.describe Routing::Engine do
         policy: build_policy,
         simulator: sequenced_simulator(%w[rejected approved])
       ).first
+    end
+
+    def rejected_fallback_decisions
+      described_class.call(
+        operations: traffic_share_operations,
+        providers: traffic_share_pool,
+        policy: build_policy("count_share" => { "enabled" => true, "weight" => 1.0 }),
+        simulator: sequenced_simulator(%w[rejected approved approved])
+      )
+    end
+
+    def traffic_share_operations
+      [
+        build_operation(operation_id: "fallback", amount: 200_000),
+        build_operation(operation_id: "primary_1"),
+        build_operation(operation_id: "primary_2")
+      ]
+    end
+
+    def traffic_share_pool
+      Routing::ProviderPool.new(
+        [
+          build_provider(traffic_percentage: 80),
+          build_provider(payment_system: "payflow", traffic_percentage: 20, priority: 2),
+          fallback_provider
+        ]
+      )
     end
 
     def fallback_decision
@@ -93,10 +269,10 @@ RSpec.describe Routing::Engine do
       )
     end
 
-    def fallback_provider
+    def fallback_provider(**overrides)
       build_provider(payment_system: "spacepayments", traffic_percentage: 0, limit_amount_min: nil,
                      limit_amount_max: nil, daily_amount_limit: nil, in_progress_count_limit: nil,
-                     in_progress_amount_limit: nil, banks: [], conversion_24h: 1.0)
+                     in_progress_amount_limit: nil, banks: [], conversion_24h: 1.0, **overrides)
     end
 
     def sequenced_simulator(results)
@@ -105,6 +281,13 @@ RSpec.describe Routing::Engine do
       simulator.define_singleton_method(:call) do |_provider|
         { result: queue.shift || "approved", latency_sec: 30 }
       end
+      simulator
+    end
+
+    def outcome_simulator(outcomes)
+      queue = outcomes.dup
+      simulator = Object.new
+      simulator.define_singleton_method(:call) { |_provider| queue.shift }
       simulator
     end
   end

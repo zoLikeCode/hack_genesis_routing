@@ -49,8 +49,10 @@ module Routing
       end
 
       def score_provider(provider, reason)
-        contributions = enabled_goals.map { |goal| goal.call(provider, @operation, @snapshot) }
-        total = contributions.sum { |item| @policy.weight_for(item.name) * item.score }
+        contributions = enabled_goals(provider).map { |goal| goal.call(provider, @operation, @snapshot) }
+        total = contributions.sum do |item|
+          @policy.weight_for(item.name, provider: provider.name) * item.score
+        end
         Score.new(total: total, contributions: contributions, reason: reason)
       end
 
@@ -62,8 +64,12 @@ module Routing
         provider.priority || LAST_PRIORITY
       end
 
-      def enabled_goals
-        GOALS.select { |goal| @policy.enabled?(goal::KEY) }
+      def enabled_goals(provider = nil)
+        return GOALS.select { |goal| @policy.enabled?(goal::KEY, provider: provider.name) } unless provider.nil?
+
+        GOALS.select do |goal|
+          @eligible.any? { |candidate| @policy.enabled?(goal::KEY, provider: candidate.name) }
+        end
       end
 
       def detect_conflicts(scores)

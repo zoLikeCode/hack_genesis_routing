@@ -21,6 +21,19 @@ RSpec.describe Routing::ProviderPool do
     end
   end
 
+  describe "#apply_default_requests_per_minute_limit!" do
+    it "fills only missing provider limits", :aggregate_failures do
+      without_limit = build_provider(requests_per_minute_limit: nil)
+      with_limit = build_provider(payment_system: "payflow", requests_per_minute_limit: 9)
+      configured = described_class.new([without_limit, with_limit])
+
+      configured.apply_default_requests_per_minute_limit!(7)
+
+      expect(without_limit.requests_per_minute_limit).to eq(7)
+      expect(with_limit.requests_per_minute_limit).to eq(9)
+    end
+  end
+
   describe "state after mutation" do
     it "allows a provider before in-progress exhaustion" do
       tight = build_provider(in_progress_count: 1, in_progress_count_limit: 2)
@@ -36,6 +49,14 @@ RSpec.describe Routing::ProviderPool do
     it "allows a provider before the daily cap is committed" do
       tight = build_provider(daily_approved_amount: 900, daily_amount_limit: 1_000)
       expect(Routing::HardConstraints::DailyLimit.call(tight, build_operation(amount: 50))).to be_ok
+    end
+
+    it "reserves the daily cap for concurrent decisions" do
+      tight = build_provider(daily_approved_amount: 900, daily_amount_limit: 1_000)
+      described_class.new([tight]).reserve!(tight, build_operation(amount: 100))
+
+      expect(Routing::HardConstraints::DailyLimit.call(tight, build_operation(amount: 1)).reason)
+        .to eq("daily_limit_exceeded")
     end
 
     it "skips a provider once the daily limit is committed" do

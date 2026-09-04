@@ -14,6 +14,10 @@ RSpec.describe Routing::History do
       expect(history["vipay"].fetch("count")).to be_positive
     end
 
+    it "uses approved payouts for historical volume" do
+      expect(history["vipay"].fetch("volume")).to be < history["vipay"].fetch("attempted_volume")
+    end
+
     it "computes vipay conversion in [0, 1]" do
       expect(history["vipay"].fetch("conversion")).to be_between(0, 1)
     end

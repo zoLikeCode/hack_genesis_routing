@@ -54,6 +54,26 @@ RSpec.describe Routing::SoftGoals::Ranker do
     expect(ranking.ordered).to contain_exactly(vipay, payflow)
   end
 
+  it "evaluates each provider with its own profile", :aggregate_failures do
+    provider_policy = Routing::Policy.new(
+      "strategies" => {},
+      "profiles" => {
+        "conversion_only" => { "strategies" => { "conversion" => { "weight" => 1.0 } } },
+        "cascade_only" => { "strategies" => { "cascade_priority" => { "weight" => 1.0 } } }
+      },
+      "provider_profiles" => { "vipay" => "cascade_only", "payflow" => "conversion_only" }
+    )
+    result = described_class.call(
+      eligible: [vipay, payflow],
+      operation: build_operation,
+      snapshot: empty_snapshot,
+      policy: provider_policy
+    )
+
+    expect(result.scores.fetch("vipay").contributions.map(&:name)).to eq(["cascade_priority"])
+    expect(result.scores.fetch("payflow").contributions.map(&:name)).to eq(["conversion"])
+  end
+
   def payflow_provider
     build_provider(payment_system: "payflow", traffic_percentage: 35, priority: 2,
                    conversion_24h: 0.91, volume_share_pct: 20,

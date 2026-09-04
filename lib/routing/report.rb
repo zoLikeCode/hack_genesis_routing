@@ -5,19 +5,21 @@ module Routing
     SHARE_GAP = 15
     UTILIZATION_WARN = 80
 
-    def self.call(decisions:, operations:, providers:, policy:)
-      new(decisions, operations, providers, policy).call
+    def self.call(decisions:, operations:, providers:, policy:, history: nil)
+      new(decisions, operations, providers, policy, history).call
     end
 
-    def initialize(decisions, operations, providers, policy)
+    def initialize(decisions, operations, providers, policy, history)
       Routing.assert(decisions.is_a?(Array) && decisions.all?(Decision), "decisions must be Decision objects")
       Routing.assert(operations.respond_to?(:each), "operations must be enumerable")
       Routing.assert(providers.is_a?(ProviderPool), "providers must be a ProviderPool")
       Routing.assert(policy.is_a?(Policy), "policy must be Routing::Policy")
+      Routing.assert(history.nil? || history.is_a?(History), "history must be Routing::History")
       @decisions = decisions
       @operations = operations
       @providers = providers
       @policy = policy
+      @history = history
     end
 
     def call
@@ -25,6 +27,10 @@ module Routing
         "period" => period,
         "total_operations" => @decisions.size,
         "distribution" => distribution,
+        "outcomes" => outcomes,
+        "history_baseline" => history_baseline,
+        "routing_profiles" => routing_profiles,
+        "unassigned_operations" => rejected_decisions.size,
         "skip_reasons" => skip_reasons,
         "projected_daily_utilization" => projected_daily_utilization,
         "recommendations" => recommendations
@@ -41,7 +47,7 @@ module Routing
     end
 
     def distribution
-      selected = @decisions.map(&:selected_provider)
+      selected = accepted_decisions.map(&:selected_provider)
       distribution_names.to_h { |name| [name, dist_entry(name, selected)] }
     end
 
@@ -57,7 +63,8 @@ module Routing
       {
         "count" => count,
         "share_pct" => share_pct(count),
-        "target_pct" => @providers.fetch(name).traffic_percentage
+        "target_pct" => @providers.fetch(name).traffic_percentage,
+        "deviation_pct" => (share_pct(count) - @providers.fetch(name).traffic_percentage).round(1)
       }
     end
 
@@ -77,6 +84,58 @@ module Routing
       tally
     end
 
+    def accepted_decisions
+      @decisions.reject { |decision| decision.simulated_result == "rejected" }
+    end
+
+    def rejected_decisions
+      @decisions.select { |decision| decision.simulated_result == "rejected" }
+    end
+
+    def outcomes
+      distribution_names.to_h do |name|
+        [name, outcome_entry(name)]
+      end
+    end
+
+    def outcome_entry(name)
+      final = @decisions.select { |decision| decision.selected_provider == name }
+      counts = final.map(&:simulated_result).tally
+      cascade_rejections = simulated_skips(name, Simulator::REJECTED)
+      cascade_expirations = simulated_skips(name, Simulator::EXPIRED)
+      attempted = final.size + cascade_rejections + cascade_expirations
+      {
+        "attempted" => attempted,
+        "approved" => counts.fetch("approved", 0),
+        "rejected" => counts.fetch("rejected", 0) + cascade_rejections,
+        "expired" => counts.fetch("expired", 0) + cascade_expirations,
+        "approval_pct" => percentage(counts.fetch("approved", 0), attempted),
+        "avg_final_latency_sec" => average(final.map(&:latency_sec))
+      }
+    end
+
+    def simulated_skips(name, reason)
+      @decisions.sum do |decision|
+        decision.attempts.count do |attempt|
+          attempt.provider == name && attempt.decision == "skipped" && attempt.reason == reason
+        end
+      end
+    end
+
+    def history_baseline
+      return {} if @history.nil?
+
+      @history.names.to_h { |name| [name, @history[name]] }
+    end
+
+    def routing_profiles
+      @providers.filter_map do |provider|
+        next unless provider.primary?(fallback: @policy.fallback_provider)
+
+        [provider.name, @policy.profile_for(provider.name) || "individual"]
+      end.to_h
+    end
+
     def projected_daily_utilization
       @providers.each_with_object({}) do |provider, hash|
         limit = provider.daily_amount_limit
@@ -92,7 +151,7 @@ module Routing
     end
 
     def recommendations
-      utilization_recs + share_recs + skip_recs
+      utilization_recs + share_recs + skip_recs + timeout_recs + conversion_recs
     end
 
     def utilization_recs
@@ -121,6 +180,40 @@ module Routing
       return [] unless reason == "bank_not_in_list"
 
       ["dominant skip reason is bank_not_in_list (#{count}) - expand banks"]
+    end
+
+    def timeout_recs
+      total = @decisions.count { |decision| decision.simulated_result == "expired" }
+      return [] if total.zero?
+
+      ["#{total} operations await status-check - keep reservations and do not start fallback"]
+    end
+
+    def conversion_recs
+      return [] if @history.nil?
+
+      outcomes.filter_map do |name, current|
+        baseline = @history[name]
+        next if baseline.nil? || current.fetch("attempted").zero?
+
+        historical = baseline.fetch("conversion") * 100
+        current_pct = current.fetch("approval_pct")
+        next unless historical - current_pct >= SHARE_GAP
+
+        "#{name} approval_pct is #{current_pct}% vs historical #{historical.round(1)}% - review its profile weights"
+      end
+    end
+
+    def percentage(part, total)
+      return 0.0 if total.zero?
+
+      (100.0 * part / total).round(1)
+    end
+
+    def average(values)
+      return 0.0 if values.empty?
+
+      (values.sum.to_f / values.size).round(1)
     end
   end
 end

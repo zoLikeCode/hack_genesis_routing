@@ -4,7 +4,7 @@ require "yaml"
 
 module Routing
   class Policy
-    attr_reader :active_profile
+    attr_reader :active_profile, :provider_profiles
 
     def self.load(path)
       new(parse(path))
@@ -20,19 +20,24 @@ module Routing
       )
       @profiles = normalize_profiles(@data.fetch("profiles", {}))
       @active_profile = normalize_active_profile(@data["active_profile"])
+      @provider_profiles = normalize_provider_profiles(@data.fetch("provider_profiles", {}))
       validate_strategy_source!
       @active_strategies = resolve_active_strategies
     end
 
-    def weight_for(key)
-      entry = @active_strategies[key.to_s]
+    def weight_for(key, provider: nil)
+      entry = strategies_for(provider)[key.to_s]
       return 0 if entry.nil?
 
       entry.fetch("weight")
     end
 
-    def enabled?(key)
-      !weight_for(key).zero?
+    def enabled?(key, provider: nil)
+      !weight_for(key, provider: provider).zero?
+    end
+
+    def profile_for(provider)
+      @provider_profiles[provider_name(provider)] || active_profile
     end
 
     def fallback_provider
@@ -81,6 +86,7 @@ module Routing
 
       stringify_keys(raw.to_h).to_h do |name, entry|
         input_error!("#{context} strategy name must not be empty") if name.empty?
+        input_error!("#{context}.#{name} is not a registered strategy") unless registered_strategy?(name)
         input_error!("#{context}.#{name} must be a mapping") unless entry.respond_to?(:to_h)
 
         [name, normalize_strategy(entry.to_h, enabled_by_default: enabled_by_default, context: "#{context}.#{name}")]
@@ -98,6 +104,10 @@ module Routing
       input_error!("#{context}.weight must be positive when enabled") if enabled && !weight.positive?
 
       entry.merge("enabled" => enabled, "weight" => weight)
+    end
+
+    def registered_strategy?(name)
+      SoftGoals::GOALS.any? { |goal| name == goal::KEY }
     end
 
     def normalize_profiles(raw)
@@ -132,18 +142,62 @@ module Routing
       value
     end
 
-    def validate_strategy_source!
-      return if active_profile.nil?
+    def normalize_provider_profiles(raw)
+      input_error!("provider_profiles must be a mapping") unless raw.respond_to?(:to_h)
 
-      input_error!("unknown active_profile #{active_profile}") unless @profiles.key?(active_profile)
+      stringify_keys(raw.to_h).to_h do |provider, profile|
+        input_error!("provider_profiles provider name must not be empty") if provider.empty?
+        unless profile.is_a?(String) && !profile.empty?
+          input_error!("provider_profiles.#{provider} must be a non-empty string")
+        end
+        [provider, profile]
+      end.freeze
+    end
+
+    def validate_strategy_source!
+      validate_active_profile!
+      validate_provider_profiles!
+      return unless profiles_selected?
       return unless @strategies.any? { |_, entry| entry.fetch("enabled") }
 
+      input_error!("provider_profiles cannot be used while an individual strategy is enabled") if active_profile.nil?
       input_error!("active_profile cannot be used while an individual strategy is enabled")
+    end
+
+    def validate_active_profile!
+      return if active_profile.nil? || @profiles.key?(active_profile)
+
+      input_error!("unknown active_profile #{active_profile}")
+    end
+
+    def validate_provider_profiles!
+      @provider_profiles.each do |provider, profile|
+        next if @profiles.key?(profile)
+
+        input_error!("unknown profile #{profile} for provider #{provider}")
+      end
+    end
+
+    def profiles_selected?
+      !active_profile.nil? || !@provider_profiles.empty?
     end
 
     def resolve_active_strategies
       source = active_profile.nil? ? @strategies : @profiles.fetch(active_profile)
       source.select { |_, entry| entry.fetch("enabled") }.freeze
+    end
+
+    def strategies_for(provider)
+      profile = provider.nil? ? active_profile : profile_for(provider)
+      return @profiles.fetch(profile) unless profile.nil?
+
+      @active_strategies
+    end
+
+    def provider_name(provider)
+      return provider.name if provider.respond_to?(:name)
+
+      provider.to_s
     end
 
     def input_error!(message)

@@ -12,16 +12,28 @@ RSpec.describe Routing::Policy do
       expect(policy.weight_for("financial_obligation")).to eq(0.05)
     end
 
-    it "leaves active_profile nil in individual mode" do
-      expect(policy.active_profile).to be_nil
+    it "loads the default profile" do
+      expect(policy.active_profile).to eq("balanced")
     end
 
-    it "enables count_share in individual mode" do
+    it "enables count_share through the default profile" do
       expect(policy.enabled?("count_share")).to be(true)
     end
 
+    it "selects a profile for each configured provider", :aggregate_failures do
+      expect(policy.profile_for("vipay")).to eq("reliable")
+      expect(policy.profile_for("payflow")).to eq("obligation")
+      expect(policy.profile_for("quickpay")).to eq("capacity")
+    end
+
+    it "uses provider-specific strategy weights", :aggregate_failures do
+      expect(policy.weight_for("conversion", provider: "vipay")).to eq(0.45)
+      expect(policy.weight_for("financial_obligation", provider: "payflow")).to eq(0.40)
+      expect(policy.weight_for("amount_band", provider: "quickpay")).to eq(0.25)
+    end
+
     it "reads simulation_seed from routing_policy.yml" do
-      expect(policy.simulation_seed).to eq(42)
+      expect(policy.simulation_seed).to eq(1)
     end
 
     it "reads a null default RPM limit from routing_policy.yml" do
@@ -35,6 +47,15 @@ RSpec.describe Routing::Policy do
     it "raises InvalidInputError when YAML is invalid" do
       path = File.join(SPEC_ROOT, "spec/support/fixtures.rb")
       expect { described_class.load(path) }.to raise_error(Routing::InvalidInputError)
+    end
+
+    it "rejects a configured strategy without an implementation" do
+      expect do
+        described_class.new("strategies" => { "missing" => { "enabled" => true, "weight" => 1.0 } })
+      end.to raise_error(
+        Routing::InvalidInputError,
+        "strategies.missing is not a registered strategy"
+      )
     end
   end
 
@@ -141,6 +162,32 @@ RSpec.describe Routing::Policy do
         Routing::InvalidInputError,
         "profiles.conversion_first.strategies must not be empty"
       )
+    end
+
+    it "rejects an unknown provider profile" do
+      profile_policy_data["provider_profiles"] = { "vipay" => "missing" }
+
+      expect { policy }.to raise_error(
+        Routing::InvalidInputError,
+        "unknown profile missing for provider vipay"
+      )
+    end
+
+    it "rejects provider profiles together with an enabled individual strategy" do
+      profile_policy_data["active_profile"] = nil
+      profile_policy_data["provider_profiles"] = { "vipay" => "conversion_first" }
+      profile_policy_data["strategies"]["count_share"]["enabled"] = true
+
+      expect { policy }.to raise_error(
+        Routing::InvalidInputError,
+        "provider_profiles cannot be used while an individual strategy is enabled"
+      )
+    end
+
+    it "uses a provider profile instead of the default profile" do
+      profile_policy_data["provider_profiles"] = { "vipay" => "conversion_first" }
+
+      expect(policy.weight_for("conversion", provider: "vipay")).to eq(0.75)
     end
   end
 end

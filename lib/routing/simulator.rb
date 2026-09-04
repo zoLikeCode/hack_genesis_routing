@@ -10,8 +10,10 @@ module Routing
       @rng = Random.new(seed)
     end
 
-    def call(provider)
+    def call(provider, operation: nil, idempotency_key: nil)
       Routing.assert(provider.is_a?(Provider), "provider must be Routing::Provider")
+      Routing.assert(operation.nil? || operation.is_a?(Operation), "operation must be Routing::Operation")
+      Routing.assert(idempotency_key.nil? || !idempotency_key.empty?, "idempotency key must not be empty")
       { result: roll_result(conversion_for(provider)), latency_sec: latency_for(provider) }
     end
 

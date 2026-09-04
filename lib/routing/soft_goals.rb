@@ -7,7 +7,9 @@ module Routing
       VolumeShare,
       Conversion,
       CascadePriority,
-      FinancialObligation
+      AmountBand,
+      FinancialObligation,
+      LoadBalance
     ].freeze
 
     def self.deficit_score(target, actual)

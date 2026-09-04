@@ -1,35 +1,40 @@
 fallback_provider: spacepayments
-simulation_seed: 42
+simulation_seed: 1
 hard_constraints:
   default_requests_per_minute_limit: null
 
 # There are two mutually exclusive ways to select strategies:
-# 1. Set one or more strategies.*.enabled flags to true and keep active_profile null.
-# 2. Set every strategies.*.enabled flag to false and select a profile by name.
-# A strategy listed inside a profile is enabled by that profile automatically.
-active_profile: null
+# 1. Enable one or more strategies directly and do not select any profiles.
+# 2. Disable every direct strategy, select a default profile, and optionally
+#    assign another profile to a specific provider.
+active_profile: balanced
+
+provider_profiles:
+  vipay: reliable
+  payflow: obligation
+  quickpay: capacity
 
 strategies:
   count_share:
-    enabled: true
+    enabled: false
     weight: 0.30
   volume_share:
-    enabled: true
+    enabled: false
     weight: 0.20
   conversion:
-    enabled: true
+    enabled: false
     weight: 0.20
   cascade_priority:
-    enabled: true
+    enabled: false
     weight: 0.10
   amount_band:
-    enabled: true
+    enabled: false
     weight: 0.10
   financial_obligation:
-    enabled: true
+    enabled: false
     weight: 0.05
   load_balance:
-    enabled: true
+    enabled: false
     weight: 0.05
 
 profiles:
@@ -63,3 +68,39 @@ profiles:
     strategies:
       cascade_priority:
         weight: 1.0
+  reliable:
+    strategies:
+      conversion:
+        weight: 0.45
+      count_share:
+        weight: 0.25
+      volume_share:
+        weight: 0.10
+      cascade_priority:
+        weight: 0.05
+      load_balance:
+        weight: 0.15
+  obligation:
+    strategies:
+      financial_obligation:
+        weight: 0.40
+      count_share:
+        weight: 0.20
+      volume_share:
+        weight: 0.15
+      conversion:
+        weight: 0.10
+      load_balance:
+        weight: 0.15
+  capacity:
+    strategies:
+      load_balance:
+        weight: 0.30
+      amount_band:
+        weight: 0.25
+      volume_share:
+        weight: 0.20
+      count_share:
+        weight: 0.15
+      conversion:
+        weight: 0.10

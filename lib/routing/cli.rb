@@ -12,7 +12,7 @@ module Routing
 
     def start(argv)
       run(parse(argv))
-    rescue InvalidInputError => e
+    rescue InvalidInputError, InvariantError, OptionParser::ParseError => e
       warn e.message
       1
     end
@@ -54,9 +54,15 @@ module Routing
       policy = Policy.load(options[:policy])
       providers = ProviderPool.load(options[:providers])
       operations = Operation.load_queue(options[:queue])
-      History.load(options[:history]) if options[:history] && File.exist?(options[:history])
+      history = History.load(options[:history]) if options[:history] && File.exist?(options[:history])
       decisions = Engine.call(operations: operations, providers: providers, policy: policy)
-      report = Report.call(decisions: decisions, operations: operations, providers: providers, policy: policy)
+      report = Report.call(
+        decisions: decisions,
+        operations: operations,
+        providers: providers,
+        policy: policy,
+        history: history
+      )
       JsonFile.write(options[:decisions_out], decisions.map(&:to_h))
       JsonFile.write(options[:report_out], report)
       0

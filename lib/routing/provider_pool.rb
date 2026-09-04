@@ -43,6 +43,11 @@ module Routing
       resolve(provider).release!(amount)
     end
 
+    def apply_default_requests_per_minute_limit!(limit)
+      @providers.each { |provider| provider.apply_default_requests_per_minute_limit!(limit) }
+      self
+    end
+
     private
 
     def resolve(provider)

@@ -6,7 +6,7 @@ module Routing
 
     attr_reader :name, :status, :traffic_percentage, :priority,
                 :limit_amount_min, :limit_amount_max,
-                :daily_amount_limit, :daily_approved_amount,
+                :daily_amount_limit, :committed_daily_approved_amount, :daily_reserved_amount,
                 :in_progress_count_limit, :in_progress_count,
                 :in_progress_amount_limit, :in_progress_amount,
                 :available_requisites, :banks, :exclude_banks,
@@ -33,20 +33,39 @@ module Routing
       Routing.assert(amount.is_a?(Numeric) && amount >= 0, "reserve amount must be non-negative")
       @in_progress_count += 1
       @in_progress_amount += amount
+      @daily_reserved_amount += amount
       record_request!(at) unless at.nil?
     end
 
     def commit_approved!(amount)
       Routing.assert(amount.is_a?(Numeric) && amount >= 0, "commit amount must be non-negative")
-      @daily_approved_amount += amount
+      @committed_daily_approved_amount += amount
     end
 
     def release!(amount)
       Routing.assert(amount.is_a?(Numeric) && amount >= 0, "release amount must be non-negative")
       Routing.assert(@in_progress_count.positive?, "release without matching reserve")
       Routing.assert(@in_progress_amount >= amount, "release amount exceeds in-progress")
+      Routing.assert(@daily_reserved_amount >= amount, "release amount exceeds daily reservation")
       @in_progress_count -= 1
       @in_progress_amount -= amount
+      @daily_reserved_amount -= amount
+    end
+
+    def daily_approved_amount
+      committed_daily_approved_amount + daily_reserved_amount
+    end
+
+    def snapshot_copy
+      copy = dup
+      copy.instance_variable_set(:@request_times, @request_times.dup)
+      copy
+    end
+
+    def apply_default_requests_per_minute_limit!(limit)
+      Routing.assert(limit.is_a?(Integer) && limit >= 0, "default RPM limit must be non-negative")
+      @requests_per_minute_limit = limit if requests_per_minute_limit.nil?
+      self
     end
 
     def record_request!(at)
@@ -85,7 +104,11 @@ module Routing
     end
 
     def assign_load(attrs)
-      @daily_approved_amount = required_number(attrs.fetch("daily_approved_amount", 0), "daily_approved_amount")
+      @committed_daily_approved_amount = required_number(
+        attrs.fetch("daily_approved_amount", 0),
+        "daily_approved_amount"
+      )
+      @daily_reserved_amount = 0
       @in_progress_count_limit = optional_integer(attrs["in_progress_count_limit"], "in_progress_count_limit")
       @in_progress_count = required_integer(attrs.fetch("in_progress_count", 0), "in_progress_count")
       @in_progress_amount_limit = optional_number(attrs["in_progress_amount_limit"], "in_progress_amount_limit")
