@@ -46,11 +46,19 @@ The application rejects unknown profiles and any attempt to mix profiles with di
 uses history-calibrated provider profiles: `reliable_history` for `vipay`, `controlled_share` for `payflow`, and
 `capacity_obligation` for `quickpay`. The `historical_only` profile demonstrates the single-strategy mode.
 
-`historical_quality` combines smoothed approval probability, timeout risk, and p90 latency. It first looks for a sufficiently
-large provider + bank + amount segment, then falls back through bank, amount, and provider-level samples. Small segments are
-shrunk toward the provider baseline, while `conversion_24h` acts as the live prior. Only history rows older than the current
-operation and compatible with the provider's current bank and amount rules are eligible, so the strategy neither looks ahead
-nor revives traffic that current hard constraints would reject.
+`historical_quality` reads a per-provider truncated attempt window, not the raw CSV as a whole. The mix is configured under
+`metrics:` in `config/routing_policy.yml` and may be overlaid per profile. Components are **availability** (`1 - timeout_rate`),
+**acceptance** (approvals among answered attempts), **approval_rate**, and **latency**. They are not extra strategies: stuffing
+timeouts and refusals into one “uptime” percentage would collapse into conversion.
+
+After the weighted strategy total, Ranker multiplies by **health** — a floored blend of availability and acceptance. Health
+never excludes a provider; it only scales the score. `conversion` still uses `conversion_24h` from `providers.json` (a slow
+published KPI). Windows are the fast local evidence, seeded from the most recent compatible CSV rows and updated on every
+attempt, including cascade refusals. A later status-check rewrites an `expired` row instead of appending a second one.
+
+`historical_quality` still prefers a sufficiently large provider + bank + amount segment, then falls back through bank, amount,
+and provider-level samples. Small segments shrink toward the provider baseline; `conversion_24h` is the live prior when the
+window is empty. Only rows older than the current operation and compatible with current bank/amount rules are eligible.
 
 `Routing::Router` always applies every hard constraint before ranking. The eligible fallback is kept outside soft-goal
 ranking and is selected only when no untried external provider remains.
@@ -86,15 +94,16 @@ context. Decision details include the selected provider profile, total score, we
 goal disagreements. Eligible providers that lost the comparison are recorded as `lower_soft_score` skips.
 
 Historical rows are not mixed into the test queue traffic denominator. They are included separately in
-`routing_report_test.json` as a baseline for conversion, latency, approved volume, and profile-weight recommendations.
-The report also contains `status_checks`; a timeout resolved before the report is built uses its terminal reservation status in
-the final traffic distribution.
+`routing_report_test.json` as `history_baseline`. Live windows appear as `provider_metrics` (availability, acceptance, health,
+timeouts, refusals). Recommendations that cite availability name a concrete YAML knob such as
+`profiles.<name>.metrics.multipliers.health.exponent`. The report also contains `status_checks`; a timeout resolved before the
+report is built uses its terminal reservation status in the final traffic distribution.
 
 ### Layout
 
 ```
 bin/                 # setup, console, route
-config/              # routing_policy.yml (strategy weights)
+config/              # routing_policy.yml (strategy weights, metrics, profiles)
 data/                # public fixtures (providers, queue, history, samples)
 lib/routing/         # application code (Zeitwerk)
 scripts/             # organizer validate_10.rb (acceptance)

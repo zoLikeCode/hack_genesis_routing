@@ -3,19 +3,20 @@
 module Routing
   module SoftGoals
     class Snapshot
-      attr_reader :version, :history
+      attr_reader :version, :history, :metrics
 
-      def self.from_providers(providers, counts: nil, history: nil, version: 0, readonly: false)
+      def self.from_providers(providers, **options)
         Routing.assert(providers.respond_to?(:each), "providers must be enumerable")
         providers = providers.to_a
         volumes, count_targets, volume_targets = provider_totals(providers)
-        session_counts = counts.nil? ? {} : counts.to_h.dup
+        session_counts = options[:counts].nil? ? {} : options[:counts].to_h.dup
         providers.each { |provider| session_counts[provider.name] ||= 0 }
         snapshot = new(
           counts: session_counts, volumes: volumes, count_targets: count_targets,
-          volume_targets: volume_targets, history: history, version: version
+          volume_targets: volume_targets, history: options[:history], metrics: options[:metrics],
+          version: options.fetch(:version, 0)
         )
-        snapshot.send(:make_readonly!) if readonly
+        snapshot.send(:make_readonly!) if options[:readonly]
         snapshot
       end
 
@@ -36,14 +37,17 @@ module Routing
 
       def initialize(counts: {}, volumes: {}, count_targets: {}, volume_targets: {}, **options)
         history = options.fetch(:history, nil)
+        metrics = options.fetch(:metrics, nil)
         version = options.fetch(:version, 0)
         Routing.assert(version.is_a?(Integer) && version >= 0, "snapshot version must be non-negative")
         Routing.assert(history.nil? || history.is_a?(History), "snapshot history must be Routing::History")
+        Routing.assert(metrics.nil? || metrics.is_a?(Metrics::Store), "snapshot metrics must be Metrics::Store")
         @counts = normalize_totals(counts, "counts")
         @volumes = normalize_totals(volumes, "volumes")
         @count_targets = normalize_totals(count_targets, "count_targets")
         @volume_targets = normalize_totals(volume_targets, "volume_targets")
         @history = history
+        @metrics = metrics
         @version = version
         @readonly = false
       end

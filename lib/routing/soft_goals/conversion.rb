@@ -5,7 +5,7 @@ module Routing
     class Conversion
       KEY = "conversion"
 
-      def self.call(provider, _operation, _snapshot)
+      def self.call(provider, _operation, _snapshot, _policy = nil)
         value = provider.conversion_24h
         return Contribution.new(name: KEY, score: 0.0, reason: Reasons::NEUTRAL) if value.nil?
 

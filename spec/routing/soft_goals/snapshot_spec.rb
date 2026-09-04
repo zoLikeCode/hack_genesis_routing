@@ -27,6 +27,15 @@ RSpec.describe Routing::SoftGoals::Snapshot do
 
       expect(snapshot.history).to equal(history)
     end
+
+    it "carries an optional metrics store" do
+      store = Routing::Metrics::Store.seed(
+        history: nil, providers: Routing::ProviderPool.new([vipay]), config: nil
+      )
+      snapshot = described_class.from_providers([vipay], metrics: store)
+
+      expect(snapshot.metrics).to equal(store)
+    end
   end
 
   describe "#record_selection!" do

@@ -9,6 +9,39 @@ status_check:
 hard_constraints:
   default_requests_per_minute_limit: null
 
+metrics:
+  window:
+    max_observations: 50
+    recent_observations: 10
+  smoothing:
+    prior_strength: 10.0
+    timeout_prior: 0.10
+    timeout_prior_strength: 5.0
+    segment_min_size: 5
+    segment_confidence_strength: 10.0
+  combination: weighted_sum
+  components:
+    approval_rate:
+      enabled: true
+      weight: 0.40
+    availability:
+      enabled: true
+      weight: 0.25
+    acceptance:
+      enabled: true
+      weight: 0.15
+    latency:
+      enabled: true
+      weight: 0.20
+      bad_p90_sec: 600
+  multipliers:
+    health:
+      enabled: true
+      floor: 0.25
+      exponent: 1.0
+      availability_weight: 0.60
+      acceptance_weight: 0.40
+
 # There are two mutually exclusive ways to select strategies:
 # 1. Enable one or more strategies directly and do not select any profiles.
 # 2. Disable every direct strategy, select a default profile, and optionally
@@ -97,6 +130,13 @@ profiles:
         weight: 0.10
       financial_obligation:
         weight: 0.05
+    metrics:
+      components:
+        availability:
+          weight: 0.40
+      multipliers:
+        health:
+          exponent: 1.5
   controlled_share:
     strategies:
       volume_share:

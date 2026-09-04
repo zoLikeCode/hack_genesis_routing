@@ -22,6 +22,7 @@ module Routing
       UNMET_COUNT_SHARE = "unmet_count_share"
       UNMET_VOLUME_SHARE = "unmet_volume_share"
       GOAL_DISAGREEMENT = "goal_disagreement"
+      METRIC_DISAGREEMENT = "metric_disagreement"
     end
   end
 end

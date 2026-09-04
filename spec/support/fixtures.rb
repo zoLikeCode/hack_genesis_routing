@@ -30,6 +30,18 @@ module RoutingSpec
       Routing::SoftGoals::Snapshot.new(**overrides)
     end
 
+    def build_observation(**overrides)
+      Routing::History::Observation.new(
+        operation_id: overrides.fetch(:operation_id, "op_hist"),
+        provider_name: overrides.fetch(:provider_name, "vipay"),
+        created_at: overrides.fetch(:created_at, Time.iso8601("2026-07-30T08:00:00+03:00")),
+        amount: overrides.fetch(:amount, 15_000),
+        bank: overrides.fetch(:bank, "sberbank"),
+        status: overrides.fetch(:status, "approved"),
+        latency_sec: overrides.fetch(:latency_sec, 30)
+      )
+    end
+
     def default_strategy_weights
       {
         "count_share" => { "enabled" => true, "weight" => 0.30 },

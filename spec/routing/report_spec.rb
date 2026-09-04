@@ -29,8 +29,8 @@ RSpec.describe Routing::Report do
   it "includes the required report keys" do
     expect(report.keys).to include(
       "period", "total_operations", "distribution", "outcomes", "history_baseline",
-      "routing_profiles", "unassigned_operations", "rejected_operations", "skip_reasons",
-      "projected_daily_utilization", "recommendations"
+      "provider_metrics", "routing_profiles", "unassigned_operations", "rejected_operations",
+      "skip_reasons", "projected_daily_utilization", "recommendations"
     )
   end
 
@@ -81,6 +81,22 @@ RSpec.describe Routing::Report do
     )
 
     expect(report_with_history.dig("history_baseline", "vipay", "conversion")).to be_between(0, 1)
+  end
+
+  it "includes live provider_metrics from runtime windows" do
+    state = Routing::RuntimeState.new(pool)
+    state.record_metric!(operation: build_operation, provider_name: "vipay", status: "approved", latency_sec: 12)
+    metrics_report = described_class.call(
+      decisions: [decision],
+      operations: [build_operation],
+      providers: pool,
+      policy: build_policy,
+      runtime_state: state
+    )
+
+    expect(metrics_report.dig("provider_metrics", "vipay")).to include(
+      "availability", "acceptance", "health", "timeout_rate", "refusal_rate"
+    )
   end
 
   it "uses a resolved timeout status for final traffic share", :aggregate_failures do

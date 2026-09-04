@@ -5,7 +5,7 @@ module Routing
     class AmountBand
       KEY = "amount_band"
 
-      def self.call(provider, operation, _snapshot)
+      def self.call(provider, operation, _snapshot, _policy = nil)
         maximum = provider.limit_amount_max
         return neutral if maximum.nil? || !maximum.positive?
 

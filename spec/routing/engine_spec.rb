@@ -25,6 +25,20 @@ RSpec.describe Routing::Engine do
       expect(triples).to include(%w[vipay skipped simulated_rejected], %w[payflow selected only_eligible_provider])
     end
 
+    it "records cascade refusals on the rejected provider window", :aggregate_failures do
+      providers = two_primary_pool
+      engine = described_class.new(
+        [build_operation],
+        providers,
+        build_policy("cascade_priority" => { "enabled" => true, "weight" => 1.0 }),
+        sequenced_simulator(%w[rejected approved])
+      )
+      engine.call
+
+      expect(engine.state.metrics.observations_for("vipay").map(&:status)).to eq(%w[rejected])
+      expect(engine.state.metrics.observations_for("payflow").map(&:status)).to eq(%w[approved])
+    end
+
     it "selects the fallback provider when no primary is eligible" do
       expect(fallback_decision.selected_provider).to eq("spacepayments")
     end

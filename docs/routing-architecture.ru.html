@@ -161,23 +161,26 @@
     <h1>Архитектура роутинга выплат</h1>
     <p class="lede">
       Путь одной операции внутри <code>Routing::Engine</code>, <code>Routing::Router</code>
-      и <code>Routing::RuntimeState</code>. CLI не показан. CSV с историей на этот путь
-      не влияет: он используется только в отчёте.
+      и <code>Routing::RuntimeState</code>. CLI не показан. CSV с историей сеет усечённые
+      окна попыток; живые исходы дописываются в <code>Metrics::Store</code> и влияют на
+      следующий снимок. Полный CSV остаётся отдельным <code>history_baseline</code> в отчёте.
     </p>
 
     <div class="stats">
       <div class="stat"><b>8</b><span>Проверок hard-constraints</span></div>
-      <div class="stat"><b>7</b><span>Оценщиков soft-goals</span></div>
-      <div class="stat"><b>3</b><span>Исхода симуляции</span></div>
+      <div class="stat"><b>8</b><span>Оценщиков soft-goals</span></div>
+      <div class="stat"><b>4+1</b><span>Метрик и health-множитель</span></div>
     </div>
 
     <h2>Исполнение одной операции</h2>
     <p>
       Вызов <code>Engine#route_one</code> снимает снимок живого состояния провайдеров,
       допускает пул по hard-constraints, ранжирует его взвешенными soft-goals,
-      резервирует ёмкость относительно той же ревизии снимка и симулирует провайдера.
-      Явный отказ основного провайдера повторяет цикл с его именем в <code>attempted</code>.
-      Таймаут удерживает reservation и останавливает каскад до status-check. Пунктир —
+      умножает итог на health, резервирует ёмкость относительно той же ревизии снимка
+      и симулирует провайдера. Явный отказ основного провайдера повторяет цикл с его
+      именем в <code>attempted</code> и пишет отказ в окно метрик.
+      Таймаут удерживает reservation, пишет <code>expired</code> в окно и останавливает
+      каскад до status-check, который переписывает ту же попытку. Пунктир —
       повтор после отказа или устаревшей ревизии, а не второй параллельный путь.
     </p>
 
@@ -249,9 +252,10 @@
     <table>
       <thead><tr><th>Откуда</th><th>Куда</th><th>Данные</th></tr></thead>
       <tbody>
-        <tr><td>RuntimeState#snapshot</td><td>Router</td><td>Замороженные копии провайдеров, SoftGoals::Snapshot (счётчики сессии + дневной объём), ревизия</td></tr>
+        <tr><td>RuntimeState#snapshot</td><td>Router</td><td>Замороженные копии провайдеров, SoftGoals::Snapshot (счётчики сессии + дневной объём + замороженные окна Metrics::Store), ревизия</td></tr>
         <tr><td>HardConstraints::Filter</td><td>Ranker / Engine</td><td>допущенные основные провайдеры, пропуски, fallback или nil</td></tr>
-        <tr><td>SoftGoals::Ranker</td><td>Selector</td><td>упорядоченный список, Score по провайдеру (итог + вклады), конфликты, пометки о недостижимых целях</td></tr>
+        <tr><td>SoftGoals::Ranker</td><td>Selector</td><td>упорядоченный список, Score по провайдеру (base_total × health, вклады, Vector метрик), конфликты целей и метрик</td></tr>
+        <tr><td>Engine</td><td>Metrics::Store</td><td>исход попытки (approved/rejected/expired) в окно провайдера; status-check переписывает expired</td></tr>
         <tr><td>Selector / Filter</td><td>Engine</td><td>Selection: предпочтительный основной либо fallback, если ранжируемый пул пуст</td></tr>
         <tr><td>Engine</td><td>RuntimeState#try_reserve!</td><td>Выбранный Provider, Operation, expected_revision</td></tr>
         <tr><td>ProviderInvoker</td><td>Engine</td><td>{ result: approved|rejected|expired, latency_sec }</td></tr>
@@ -264,12 +268,12 @@
     <table>
       <thead><tr><th>Слой</th><th>Типы</th><th>Ответственность</th></tr></thead>
       <tbody>
-        <tr><td>Входные сущности</td><td>Operation, Provider, ProviderPool, Policy</td><td>Типизированные записи из JSON/YAML. Политика хранит веса стратегий, профили провайдеров, имя fallback и зерно симуляции.</td></tr>
+        <tr><td>Входные сущности</td><td>Operation, Provider, ProviderPool, Policy</td><td>Типизированные записи из JSON/YAML. Политика хранит веса стратегий, профили, блок metrics и overlay профилей, имя fallback и зерно симуляции.</td></tr>
         <tr><td>Допуск</td><td>HardConstraints::*</td><td>Первая непройденная проверка останавливает провайдера. Статус, диапазон суммы, дневной лимит, in-progress count/amount, банк, маржа, реквизиты, RPM.</td></tr>
-        <tr><td>Оценка</td><td>SoftGoals::*</td><td>Только допущенные основные провайдеры. Взвешенная сумма; ничья — по provider.priority, затем по имени. Fallback здесь не участвует.</td></tr>
+        <tr><td>Оценка</td><td>SoftGoals::*, Metrics::*</td><td>Только допущенные основные провайдеры. Взвешенная сумма стратегий, затем множитель health. Ничья — по provider.priority, затем по имени. Fallback здесь не участвует.</td></tr>
         <tr><td>Выбор</td><td>Router, Selector</td><td>Router вызывает Filter, затем Ranker, затем Selector. Selector возвращает ranking.preferred. Если он nil, Router отдаёт hard-допустимый fallback.</td></tr>
-        <tr><td>Оркестрация</td><td>Engine, RouteContext</td><td>Онлайн-инварианты (уникальный id, неубывающий created_at), цикл попыток, журнал attempts, сумма latency, сборка Decision.</td></tr>
-        <tr><td>Состояние</td><td>RuntimeState, Reservation, счётчики Provider</td><td>Mutex и ревизия. Резерв атомарный: повторная проверка hard-constraints на живом провайдере.</td></tr>
+        <tr><td>Оркестрация</td><td>Engine, RouteContext</td><td>Онлайн-инварианты (уникальный id, неубывающий created_at), цикл попыток, журнал attempts, сумма latency, запись метрик, сборка Decision.</td></tr>
+        <tr><td>Состояние</td><td>RuntimeState, Reservation, Metrics::Store, счётчики Provider</td><td>Mutex и ревизия. Резерв атомарный: повторная проверка hard-constraints на живом провайдере. Окна попыток усечены по провайдеру.</td></tr>
       </tbody>
     </table>
 
@@ -300,6 +304,7 @@
             <tr><td>count_share</td><td>дефицит относительно traffic_percentage</td></tr>
             <tr><td>volume_share</td><td>дефицит относительно volume_share_pct</td></tr>
             <tr><td>conversion</td><td>conversion_24h в [0, 1]</td></tr>
+            <tr><td>historical_quality</td><td>взвешенная смесь approval / availability / acceptance / latency из окна</td></tr>
             <tr><td>cascade_priority</td><td>1 / priority</td></tr>
             <tr><td>amount_band</td><td>amount / limit_amount_max: выше у более узкого подходящего потолка</td></tr>
             <tr><td>financial_obligation</td><td>буст ниже min; штраф только от 80% soft-max</td></tr>
@@ -340,14 +345,38 @@
 
     <div class="callout">
       <strong>Правило выбора</strong>
-      Предпочтительный = наибольший взвешенный soft-score среди оставшихся допущенных
-      основных провайдеров. Остальные допущенные попадают в <code>attempts</code> как
+      Предпочтительный = наибольший <code>base_total × health</code> среди оставшихся допущенных
+      основных провайдеров. Health не исключает провайдера: низкое значение только снижает счёт.
+      Остальные допущенные попадают в <code>attempts</code> как
       <code>lower_soft_score</code>. Fallback (<code>spacepayments</code>) держится вне ранжирования
       и используется, только когда этот набор пуст. Устаревший резерв попытку не тратит:
       цикл снова снимает снимок с тем же <code>attempted</code>. Явный отказ исключает
       провайдера и переводит операцию к следующему. Таймаут удерживает reservation и
       завершает текущий каскад до позднего status-check.
     </div>
+
+    <h2>Метрики провайдера</h2>
+    <p>
+      Это не стратегии распределения и не hard-constraints. Окно — кольцевой буфер последних
+      <code>metrics.window.max_observations</code> попыток провайдера (включая каскадные отказы).
+      Срез <code>recent_observations</code> кормит только health. CSV сеет окна совместимыми
+      строками; полный файл остаётся <code>history_baseline</code>.
+    </p>
+    <table>
+      <thead><tr><th>Величина</th><th>Смысл</th><th>Роль</th></tr></thead>
+      <tbody>
+        <tr><td>availability</td><td>1 − доля timeout</td><td>компонент historical_quality и вход health</td></tr>
+        <tr><td>acceptance</td><td>approved / (approved + rejected)</td><td>компонент и вход health; отказы, не простои</td></tr>
+        <tr><td>approval_rate</td><td>сглаженный approved / n</td><td>компонент historical_quality, не замена conversion_24h</td></tr>
+        <tr><td>latency</td><td>1 − p90 / bad_p90_sec</td><td>компонент historical_quality</td></tr>
+        <tr><td>health</td><td>floor + (1 − floor) × blend<sup>exponent</sup></td><td>множитель итога Ranker после весов стратегий</td></tr>
+      </tbody>
+    </table>
+    <p>
+      Веса компонентов и health задаются в <code>metrics:</code> и могут быть перекрыты в
+      <code>profiles.&lt;name&gt;.metrics</code>. Конфликты метрик пишутся как
+      <code>metric_disagreement</code> рядом с <code>goal_disagreement</code>.
+    </p>
 
     <h2>Подключение стратегий</h2>
     <p>
@@ -364,7 +393,7 @@
         <tr><td>Доля по объёму</td><td>volume_share + daily_approved_amount (committed + reserved)</td></tr>
         <tr><td>Каскадная очередь</td><td>cascade_priority, затем имя; повторы переранжируют оставшихся</td></tr>
         <tr><td>По сумме платежа</td><td>hard AmountRange плюс amount_band (доля суммы от max — более узкий потолок)</td></tr>
-        <tr><td>По конверсии</td><td>цель conversion по conversion_24h</td></tr>
+        <tr><td>По конверсии</td><td>цель conversion по conversion_24h; historical_quality по окну попыток</td></tr>
         <tr><td>По интенсивности</td><td>hard Intensity (RPM); load_balance учитывает in-progress и RPM</td></tr>
         <tr><td>Финансовые обязательства</td><td>financial_obligation по daily_turnover_min/max</td></tr>
       </tbody>
@@ -382,7 +411,8 @@
       </p>
       <p class="caption" style="margin:0">
         Новая hard-проверка: добавить в <code>HardConstraints::CHECKS</code>. Новая soft-цель:
-        добавить в <code>SoftGoals::GOALS</code> и ключ в YAML. Engine не ветвится по именам стратегий.
+        добавить в <code>SoftGoals::GOALS</code> и ключ в YAML. Новая метрика качества: ключ в
+        <code>metrics.components</code> и каталог, не новая стратегия. Engine не ветвится по именам стратегий.
       </p>
     </div>
   </main>

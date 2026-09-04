@@ -86,6 +86,7 @@ RSpec.describe Routing::History do
 
     def observation(id_time:, status:, bank: "sberbank")
       Routing::History::Observation.new(
+        operation_id: "op_hist_#{id_time}",
         provider_name: "vipay",
         created_at: Time.iso8601(id_time),
         amount: 15_000,

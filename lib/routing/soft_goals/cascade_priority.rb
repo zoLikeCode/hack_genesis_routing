@@ -5,7 +5,7 @@ module Routing
     class CascadePriority
       KEY = "cascade_priority"
 
-      def self.call(provider, _operation, _snapshot)
+      def self.call(provider, _operation, _snapshot, _policy = nil)
         priority = provider.priority
         return Contribution.new(name: KEY, score: 0.0, reason: Reasons::NEUTRAL) if priority.nil?
 

@@ -55,7 +55,7 @@ module Routing
       providers = ProviderPool.load(options[:providers])
       operations = Operation.load_queue(options[:queue])
       history = History.load(options[:history]) if options[:history] && File.exist?(options[:history])
-      state = RuntimeState.new(providers, history: history)
+      state = RuntimeState.new(providers, history: history, metrics_config: policy.metrics)
       engine = Engine.new(operations, providers, policy, state: state)
       decisions = engine.call
       report = Report.call(

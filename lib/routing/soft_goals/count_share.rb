@@ -5,7 +5,7 @@ module Routing
     class CountShare
       KEY = "count_share"
 
-      def self.call(provider, _operation, snapshot)
+      def self.call(provider, _operation, snapshot, _policy = nil)
         actual = snapshot.count_share_pct(provider.name)
         target = provider.traffic_percentage
         score = SoftGoals.deficit_score(target, actual)

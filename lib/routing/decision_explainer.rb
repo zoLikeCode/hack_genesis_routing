@@ -10,13 +10,38 @@ module Routing
     end
 
     def self.score_details(selection, policy)
-      score = selection.ranking.scores.fetch(selection.provider.name)
-      profile = policy.profile_for(selection.provider.name) || "individual"
-      parts = ["profile=#{profile}", "total_score=#{score.total.round(4)}"]
-      (parts + contributions(score, selection.provider.name, policy) +
-        selection.ranking.notes + disagreement_notes(selection.ranking)).join("; ")
+      score_parts(selection, policy).join("; ")
     end
     private_class_method :score_details
+
+    def self.score_parts(selection, policy)
+      score = selection.ranking.scores.fetch(selection.provider.name)
+      identity_parts(selection, policy, score) + metric_parts(score) +
+        contributions(score, selection.provider.name, policy) +
+        selection.ranking.notes + disagreement_notes(selection.ranking)
+    end
+    private_class_method :score_parts
+
+    def self.identity_parts(selection, policy, score)
+      profile = policy.profile_for(selection.provider.name) || "individual"
+      [
+        "profile=#{profile}",
+        "total_score=#{score.total.round(4)}",
+        "base_total=#{score.base_total.round(4)}",
+        "health=#{score.health.round(4)}"
+      ]
+    end
+    private_class_method :identity_parts
+
+    def self.metric_parts(score)
+      vector = score.metrics
+      return [] if vector.nil?
+
+      availability = (vector.availability * 100).round(1)
+      acceptance = (vector.acceptance * 100).round(1)
+      ["availability=#{availability}%", "acceptance=#{acceptance}%"]
+    end
+    private_class_method :metric_parts
 
     def self.outcome_details(result)
       return "timeout reservation retained pending status-check" if result == "expired"
@@ -34,14 +59,21 @@ module Routing
     private_class_method :contributions
 
     def self.disagreement_notes(ranking)
-      ranking.conflicts.filter_map do |conflict|
-        next unless conflict.kind == SoftGoals::Reasons::GOAL_DISAGREEMENT
-
-        details = conflict.details
-        "goal_disagreement #{details.fetch('goal_a')}=#{details.fetch('preferred_a')} " \
-          "vs #{details.fetch('goal_b')}=#{details.fetch('preferred_b')}"
-      end
+      ranking.conflicts.filter_map { |conflict| conflict_note(conflict) }
     end
     private_class_method :disagreement_notes
+
+    def self.conflict_note(conflict)
+      details = conflict.details
+      case conflict.kind
+      when SoftGoals::Reasons::GOAL_DISAGREEMENT
+        "goal_disagreement #{details.fetch('goal_a')}=#{details.fetch('preferred_a')} " \
+        "vs #{details.fetch('goal_b')}=#{details.fetch('preferred_b')}"
+      when SoftGoals::Reasons::METRIC_DISAGREEMENT
+        "metric_disagreement #{details.fetch('metric_a')}=#{details.fetch('preferred_a')} " \
+        "vs #{details.fetch('metric_b')}=#{details.fetch('preferred_b')}"
+      end
+    end
+    private_class_method :conflict_note
   end
 end

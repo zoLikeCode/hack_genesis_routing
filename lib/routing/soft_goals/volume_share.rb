@@ -5,7 +5,7 @@ module Routing
     class VolumeShare
       KEY = "volume_share"
 
-      def self.call(provider, _operation, snapshot)
+      def self.call(provider, _operation, snapshot, _policy = nil)
         target = provider.volume_share_pct
         return unset if target.nil?
 

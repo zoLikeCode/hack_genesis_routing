@@ -67,13 +67,15 @@ RSpec.describe Routing::Policy do
       expect { described_class.load(path) }.to raise_error(Routing::InvalidInputError)
     end
 
-    it "rejects a configured strategy without an implementation" do
+    it "rejects an unknown metric component" do
       expect do
-        described_class.new("strategies" => { "missing" => { "enabled" => true, "weight" => 1.0 } })
-      end.to raise_error(
-        Routing::InvalidInputError,
-        "strategies.missing is not a registered strategy"
-      )
+        described_class.new("metrics" => { "components" => { "uptime" => { "weight" => 1.0 } } })
+      end.to raise_error(Routing::InvalidInputError, /not a registered metric/)
+    end
+
+    it "loads metrics from routing_policy.yml", :aggregate_failures do
+      expect(policy.metrics.max_observations).to eq(50)
+      expect(policy.metrics_for("vipay").health.fetch("exponent")).to eq(1.5)
     end
   end
 
@@ -206,6 +208,19 @@ RSpec.describe Routing::Policy do
       profile_policy_data["provider_profiles"] = { "vipay" => "conversion_first" }
 
       expect(policy.weight_for("conversion", provider: "vipay")).to eq(0.75)
+    end
+
+    it "overlays profile metrics on the global metrics block", :aggregate_failures do
+      profile_policy_data["metrics"] = {
+        "components" => { "availability" => { "weight" => 0.25 } }
+      }
+      profile_policy_data["profiles"]["conversion_first"]["metrics"] = {
+        "components" => { "availability" => { "weight" => 0.40 } },
+        "multipliers" => { "health" => { "exponent" => 1.5 } }
+      }
+
+      expect(policy.metrics_for("vipay").components.fetch("availability").fetch("weight")).to eq(0.40)
+      expect(policy.metrics_for("vipay").health.fetch("exponent")).to eq(1.5)
     end
   end
 

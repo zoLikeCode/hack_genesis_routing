@@ -6,7 +6,7 @@ module Routing
       KEY = "financial_obligation"
       SOFT_MAX_START = 0.8
 
-      def self.call(provider, operation, _snapshot)
+      def self.call(provider, operation, _snapshot, _policy = nil)
         boost = min_boost(provider)
         penalty = max_penalty(provider, operation)
         score = (boost + penalty).clamp(-1.0, 1.0)

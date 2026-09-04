@@ -5,7 +5,7 @@ module Routing
     class LoadBalance
       KEY = "load_balance"
 
-      def self.call(provider, operation, _snapshot)
+      def self.call(provider, operation, _snapshot, _policy = nil)
         utilizations = [
           utilization(provider.in_progress_count, provider.in_progress_count_limit),
           utilization(provider.in_progress_amount, provider.in_progress_amount_limit),

@@ -2,6 +2,8 @@
 
 module Routing
   class Engine
+    include Recording
+
     FALLBACK_SELECTED = "fallback_selected"
 
     attr_reader :state, :status_checker
@@ -19,7 +21,7 @@ module Routing
       @policy = policy
       apply_default_requests_per_minute_limit!
       @simulator = simulator || Simulator.new(seed: policy.simulation_seed)
-      @state = state || RuntimeState.new(providers)
+      @state = state || RuntimeState.new(providers, metrics_config: policy.metrics)
       Routing.assert(@state.is_a?(RuntimeState), "state must be Routing::RuntimeState")
       Routing.assert(@state.providers.equal?(providers), "runtime state must own the provider pool")
       @status_checker = build_status_checker
@@ -78,6 +80,7 @@ module Routing
 
       outcome = simulate_try(selection.provider, operation, reserved.reservation)
       context.add_latency!(outcome.fetch(:latency_sec))
+      record_metric(operation, selection.provider, outcome)
       decision = apply_outcome(operation, selection, context, outcome, reserved.reservation)
       context.mark_attempted!(selection.provider.name) if decision.nil?
       decision
@@ -133,7 +136,7 @@ module Routing
       finished = true
       outcome
     ensure
-      @state.reject!(reservation) if reservation.active? && !finished
+      record_failed_try(operation, provider, reservation) unless finished
     end
 
     def complete(operation, selection, context, outcome)

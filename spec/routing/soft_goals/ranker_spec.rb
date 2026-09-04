@@ -50,10 +50,6 @@ RSpec.describe Routing::SoftGoals::Ranker do
     expect(unmet_ranking.notes).to include("unmet_count_share: vipay")
   end
 
-  it "keeps every eligible provider in the ranking" do
-    expect(ranking.ordered).to contain_exactly(vipay, payflow)
-  end
-
   it "evaluates each provider with its own profile", :aggregate_failures do
     provider_policy = Routing::Policy.new(
       "strategies" => {},
@@ -72,6 +68,24 @@ RSpec.describe Routing::SoftGoals::Ranker do
 
     expect(result.scores.fetch("vipay").contributions.map(&:name)).to eq(["cascade_priority"])
     expect(result.scores.fetch("payflow").contributions.map(&:name)).to eq(["conversion"])
+  end
+
+  it "keeps every eligible provider in the ranking" do
+    expect(ranking.ordered).to contain_exactly(vipay, payflow)
+  end
+
+  it "applies health after the weighted soft total", :aggregate_failures do
+    result = health_ranking
+
+    expect(result.preferred.name).to eq("payflow")
+    expect(result.scores.fetch("payflow").health).to be > result.scores.fetch("vipay").health
+    expect(result.scores.fetch("vipay").total).to eq(
+      result.scores.fetch("vipay").base_total * result.scores.fetch("vipay").health
+    )
+  end
+
+  it "records a metric disagreement when quality signals prefer different providers" do
+    expect(metric_conflict_ranking.conflicts.map(&:kind)).to include("metric_disagreement")
   end
 
   def payflow_provider
@@ -127,6 +141,40 @@ RSpec.describe Routing::SoftGoals::Ranker do
       operation: build_operation,
       snapshot: empty_snapshot(count_targets: { "vipay" => 40, "payflow" => 35 }),
       policy: policy
+    )
+  end
+
+  def health_ranking
+    healthy = build_provider(payment_system: "payflow", conversion_24h: 0.80, traffic_percentage: 40, priority: 2)
+    unhealthy = build_provider(conversion_24h: 0.80)
+    pool = Routing::ProviderPool.new([unhealthy, healthy])
+    store = Routing::Metrics::Store.seed(history: nil, providers: pool, config: nil)
+    5.times do |index|
+      store.record(build_observation(operation_id: "exp_#{index}", provider_name: "vipay", status: "expired"))
+      store.record(build_observation(operation_id: "ok_#{index}", provider_name: "payflow", status: "approved"))
+    end
+    described_class.call(
+      eligible: [unhealthy, healthy],
+      operation: build_operation,
+      snapshot: empty_snapshot(metrics: store.snapshot),
+      policy: build_policy("conversion" => { "enabled" => true, "weight" => 1.0 })
+    )
+  end
+
+  def metric_conflict_ranking
+    refused = build_provider(conversion_24h: 0.50)
+    timed_out = build_provider(payment_system: "payflow", conversion_24h: 0.50, traffic_percentage: 40, priority: 2)
+    pool = Routing::ProviderPool.new([refused, timed_out])
+    store = Routing::Metrics::Store.seed(history: nil, providers: pool, config: nil)
+    5.times do |index|
+      store.record(build_observation(operation_id: "rej_#{index}", provider_name: "vipay", status: "rejected"))
+      store.record(build_observation(operation_id: "exp_#{index}", provider_name: "payflow", status: "expired"))
+    end
+    described_class.call(
+      eligible: [refused, timed_out],
+      operation: build_operation,
+      snapshot: empty_snapshot(metrics: store.snapshot),
+      policy: build_policy("conversion" => { "enabled" => true, "weight" => 1.0 })
     )
   end
 end

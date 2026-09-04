@@ -38,13 +38,14 @@ module Routing
       end
     end
 
-    attr_reader :providers, :history
+    attr_reader :providers, :history, :metrics
 
-    def initialize(providers, history: nil)
+    def initialize(providers, history: nil, metrics_config: nil)
       Routing.assert(providers.is_a?(ProviderPool), "providers must be a ProviderPool")
       Routing.assert(history.nil? || history.is_a?(History), "runtime history must be Routing::History")
       @providers = providers
       @history = history
+      @metrics = Metrics::Store.seed(history: history, providers: providers, config: metrics_config)
       @committed_counts = Hash.new(0)
       @pending_counts = Hash.new(0)
       @reservations = {}
@@ -60,6 +61,7 @@ module Routing
           provider_views,
           counts: counts,
           history: history,
+          metrics: metrics.snapshot,
           version: @revision,
           readonly: true
         )
@@ -121,11 +123,24 @@ module Routing
 
         Routing.assert(found.timed_out?, "reservation #{key} is not timed out")
         settle_active!(found, settlement)
+        rewrite_metric!(operation_id: operation_id, provider_name: provider_name, status: settlement)
+        found
       end
     end
 
     def reservations
       @mutex.synchronize { @reservations.values.dup.freeze }
+    end
+
+    def record_metric!(operation:, provider_name:, status:, latency_sec:)
+      Routing.assert(operation.is_a?(Operation), "metric record requires Operation")
+      Routing.assert(provider_name.is_a?(String) && !provider_name.empty?, "provider name required")
+      Routing.assert(History::STATUSES.include?(status), "unknown metric status #{status}")
+      Routing.assert(latency_sec.is_a?(Numeric) && latency_sec >= 0, "latency_sec must be non-negative")
+      @mutex.synchronize do
+        @metrics.record(metric_observation(operation, provider_name, status, latency_sec))
+        bump_revision!
+      end
     end
 
     def reservation_for(operation_id:, provider_name:)
@@ -134,6 +149,23 @@ module Routing
     end
 
     private
+
+    def rewrite_metric!(operation_id:, provider_name:, status:)
+      mapped = status == "approved" ? "approved" : "rejected"
+      @metrics.update_status(operation_id: operation_id, provider_name: provider_name, status: mapped)
+    end
+
+    def metric_observation(operation, provider_name, status, latency_sec)
+      History::Observation.new(
+        operation_id: operation.id,
+        provider_name: provider_name,
+        created_at: operation.created_at || Time.at(0),
+        amount: operation.amount,
+        bank: operation.bank,
+        status: status,
+        latency_sec: latency_sec
+      )
+    end
 
     def create_reservation(operation, provider)
       reservation = Reservation.new(operation: operation, provider_name: provider.name)

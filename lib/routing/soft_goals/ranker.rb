@@ -4,6 +4,7 @@ module Routing
   module SoftGoals
     class Ranker
       LAST_PRIORITY = 100
+      METRIC_KEYS = Metrics::COMPONENTS
 
       def self.call(eligible:, operation:, snapshot:, policy:)
         new(eligible, operation, snapshot, policy).call
@@ -26,7 +27,7 @@ module Routing
           ordered: sort_eligible(scores),
           scores: scores,
           conflicts: detect_conflicts(scores),
-          notes: unmet_notes
+          notes: unmet_notes + metric_notes(scores)
         )
       end
 
@@ -49,11 +50,46 @@ module Routing
       end
 
       def score_provider(provider, reason)
-        contributions = enabled_goals(provider).map { |goal| goal.call(provider, @operation, @snapshot) }
-        total = contributions.sum do |item|
-          @policy.weight_for(item.name, provider: provider.name) * item.score
+        contributions = enabled_goals(provider).map do |goal|
+          goal.call(provider, @operation, @snapshot, @policy)
         end
-        Score.new(total: total, contributions: contributions, reason: reason)
+        base = weighted_total(provider, contributions)
+        vector = metric_vector(provider)
+        health = applied_health(provider, vector)
+        Score.new(
+          total: base * health, base_total: base, health: health,
+          contributions: contributions, reason: reason, metrics: vector
+        )
+      end
+
+      def weighted_total(provider, contributions)
+        contributions.sum { |item| @policy.weight_for(item.name, provider: provider.name) * item.score }
+      end
+
+      def metric_vector(provider)
+        observations = metric_observations(provider)
+        return if observations.nil?
+
+        Metrics::Catalog.call(
+          observations: observations,
+          provider: provider,
+          operation: @operation,
+          config: @policy.metrics_for(provider)
+        )
+      end
+
+      def metric_observations(provider)
+        return @snapshot.metrics.observations_for(provider.name) unless @snapshot.metrics.nil?
+        return @snapshot.history.observations_for(provider.name) unless @snapshot.history.nil?
+
+        nil
+      end
+
+      def applied_health(provider, vector)
+        return 1.0 if vector.nil?
+        return 1.0 unless @policy.metrics_for(provider).health_enabled?
+
+        vector.health
       end
 
       def sort_eligible(scores)
@@ -73,7 +109,7 @@ module Routing
       end
 
       def detect_conflicts(scores)
-        disagreements(scores) + unmet_conflicts
+        disagreements(scores) + metric_disagreements(scores) + unmet_conflicts
       end
 
       def disagreements(scores)
@@ -102,11 +138,7 @@ module Routing
         ranked = ranked_scores(goal, scores)
         return if ranked.empty?
 
-        max = ranked.map(&:last).max
-        tops = ranked.select { |_, score| score == max }
-        return unless unique_preference?(tops, ranked, max)
-
-        tops.first.first
+        pick_unique(ranked)
       end
 
       def ranked_scores(goal, scores)
@@ -124,8 +156,56 @@ module Routing
         true
       end
 
+      def pick_unique(ranked)
+        max = ranked.map(&:last).max
+        tops = ranked.select { |_, score| score == max }
+        return unless unique_preference?(tops, ranked, max)
+
+        tops.first.first
+      end
+
       def contribution_score(scores, provider, goal)
         scores.fetch(provider.name).contribution(goal::KEY)&.score || 0.0
+      end
+
+      def metric_disagreements(scores)
+        winners = unique_metric_winners(scores)
+        winners.keys.combination(2).filter_map { |left, right| metric_disagreement(left, right, winners) }
+      end
+
+      def metric_disagreement(left, right, winners)
+        return if winners[left] == winners[right]
+
+        Conflict.new(
+          kind: Reasons::METRIC_DISAGREEMENT,
+          details: { "metric_a" => left, "preferred_a" => winners[left],
+                     "metric_b" => right, "preferred_b" => winners[right] }
+        )
+      end
+
+      def unique_metric_winners(scores)
+        METRIC_KEYS.each_with_object({}) do |key, winners|
+          ranked = metric_ranked(scores, key)
+          winner = pick_unique(ranked)
+          winners[key] = winner unless winner.nil?
+        end
+      end
+
+      def metric_ranked(scores, key)
+        @eligible.filter_map do |provider|
+          vector = scores.fetch(provider.name).metrics
+          next if vector.nil?
+
+          [provider.name, vector.public_send(key)]
+        end
+      end
+
+      def metric_notes(scores)
+        metric_disagreements(scores).map do |conflict|
+          details = conflict.details
+          "#{conflict.kind}: #{details.fetch('metric_a')}=#{details.fetch('preferred_a')} " \
+            "vs #{details.fetch('metric_b')}=#{details.fetch('preferred_b')}"
+        end
       end
 
       def unmet_conflicts

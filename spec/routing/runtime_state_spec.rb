@@ -98,6 +98,21 @@ RSpec.describe Routing::RuntimeState do
     expect(pool.fetch("vipay").daily_approved_amount).to eq(15_000)
   end
 
+  it "records attempt outcomes into the provider window" do
+    state.record_metric!(operation: operation, provider_name: "vipay", status: "rejected", latency_sec: 9)
+
+    expect(state.metrics.observations_for("vipay").map(&:status)).to eq(%w[rejected])
+  end
+
+  it "rewrites a timed-out metric after status-check settlement" do
+    reservation = reserve
+    state.mark_timeout!(reservation)
+    state.record_metric!(operation: operation, provider_name: "vipay", status: "expired", latency_sec: 40)
+    state.resolve_timeout!(operation_id: operation.id, provider_name: provider.name, result: "approved")
+
+    expect(state.metrics.observations_for("vipay").first.status).to eq("approved")
+  end
+
   it "rechecks hard constraints inside the reservation boundary", :aggregate_failures do
     blocked = build_provider(status: "disabled")
     blocked_state = described_class.new(Routing::ProviderPool.new([blocked]))

@@ -4,7 +4,9 @@ require "yaml"
 
 module Routing
   class Policy
-    attr_reader :active_profile, :provider_profiles, :status_check
+    include MetricOverlays
+
+    attr_reader :active_profile, :provider_profiles, :status_check, :metrics
 
     def self.load(path)
       new(parse(path))
@@ -13,6 +15,8 @@ module Routing
     def initialize(data)
       Routing.assert(data.respond_to?(:to_h), "policy must be a Hash")
       @data = stringify_keys(data.to_h)
+      @profile_metrics = {}
+      @metrics = Metrics::Config.parse(@data.fetch("metrics", {}))
       @strategies = normalize_strategies(
         @data.fetch("strategies", {}),
         enabled_by_default: false,
@@ -123,7 +127,8 @@ module Routing
       input_error!("profile name must not be empty") if name.empty?
       input_error!("profiles.#{name} must be a mapping") unless raw.respond_to?(:to_h)
 
-      strategies = stringify_keys(raw.to_h)["strategies"]
+      data = stringify_keys(raw.to_h)
+      strategies = data["strategies"]
       input_error!("profiles.#{name}.strategies is required") if strategies.nil?
       normalized = normalize_strategies(
         strategies,
@@ -133,6 +138,7 @@ module Routing
       input_error!("profiles.#{name}.strategies must not be empty") if normalized.empty?
       enabled = normalized.any? { |_, entry| entry.fetch("enabled") }
       input_error!("profiles.#{name} must enable at least one strategy") unless enabled
+      assign_profile_metrics!(name, data["metrics"])
       normalized
     end
 

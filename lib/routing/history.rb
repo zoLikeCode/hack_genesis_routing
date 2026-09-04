@@ -5,10 +5,11 @@ require "time"
 
 module Routing
   class History
-    Observation = Data.define(:provider_name, :created_at, :amount, :bank, :status, :latency_sec)
-    Quality = Data.define(:score, :sample_size, :scope, :approval_rate, :timeout_rate, :p90_latency_sec)
+    Observation = Data.define(:operation_id, :provider_name, :created_at, :amount, :bank, :status, :latency_sec)
 
     STATUSES = %w[approved rejected expired].freeze
+
+    attr_reader :observations
 
     def self.load(path)
       observations = parse(read(path))
@@ -21,6 +22,7 @@ module Routing
                      "history observations must be Observation objects")
       @by_provider = by_provider.transform_values(&:freeze).freeze
       @observations = observations.dup.freeze
+      @by_name = @observations.group_by(&:provider_name).transform_values(&:freeze).freeze
     end
 
     def [](name)
@@ -31,8 +33,17 @@ module Routing
       @by_provider.keys
     end
 
-    def quality(provider:, operation:)
-      HistoricalQualityModel.call(observations: @observations, provider: provider, operation: operation)
+    def observations_for(name)
+      @by_name.fetch(name, []).freeze
+    end
+
+    def quality(provider:, operation:, config: nil)
+      HistoricalQualityModel.call(
+        observations: observations_for(provider.name),
+        provider: provider,
+        operation: operation,
+        config: config
+      )
     end
 
     def self.read(path)
@@ -43,22 +54,32 @@ module Routing
     private_class_method :read
 
     def self.parse(table)
-      table.map do |row|
-        name = row["payment_system"]
-        input_error!("payment_system is required") if name.nil? || name.empty?
-        status = row["status"]
-        input_error!("unknown history status #{status}") unless STATUSES.include?(status)
-        Observation.new(
-          provider_name: name,
-          created_at: timestamp(row["created_at"]),
-          amount: number(row["amount"], "amount"),
-          bank: row["bank"],
-          status: status,
-          latency_sec: number(row["latency_sec"], "latency_sec")
-        )
-      end
+      table.map { |row| observation_from(row) }
     end
     private_class_method :parse
+
+    def self.observation_from(row)
+      name = row["payment_system"]
+      input_error!("payment_system is required") if name.nil? || name.empty?
+      status = row["status"]
+      input_error!("unknown history status #{status}") unless STATUSES.include?(status)
+      Observation.new(
+        operation_id: required_text(row["operation_id"], "operation_id"),
+        provider_name: name,
+        created_at: timestamp(row["created_at"]),
+        amount: number(row["amount"], "amount"),
+        bank: row["bank"],
+        status: status,
+        latency_sec: number(row["latency_sec"], "latency_sec")
+      )
+    end
+    private_class_method :observation_from
+
+    def self.required_text(value, field)
+      input_error!("#{field} is required") if value.nil? || value.empty?
+      value
+    end
+    private_class_method :required_text
 
     def self.aggregate(observations)
       totals = Hash.new { |hash, name| hash[name] = empty_totals }

@@ -36,6 +36,7 @@ module Routing
         "distribution" => distribution,
         "outcomes" => outcomes,
         "history_baseline" => history_baseline,
+        "provider_metrics" => provider_metrics,
         "routing_profiles" => routing_profiles,
         "unassigned_operations" => 0,
         "rejected_operations" => rejected_decisions.size,
@@ -161,7 +162,9 @@ module Routing
     end
 
     def recommendations
-      utilization_recs + share_recs + skip_recs + timeout_recs + conversion_recs
+      utilization_recs + share_recs + skip_recs + timeout_recs +
+        ProviderStats.conversion_recs(@history, outcomes) +
+        ProviderStats.recommendations(provider_metrics, @policy)
     end
 
     def utilization_recs
@@ -221,19 +224,13 @@ module Routing
       @status_checker.summary
     end
 
-    def conversion_recs
-      return [] if @history.nil?
-
-      outcomes.filter_map do |name, current|
-        baseline = @history[name]
-        next if baseline.nil? || current.fetch("attempted").zero?
-
-        historical = baseline.fetch("conversion") * 100
-        current_pct = current.fetch("approval_pct")
-        next unless historical - current_pct >= SHARE_GAP
-
-        "#{name} approval_pct is #{current_pct}% vs historical #{historical.round(1)}% - review its profile weights"
-      end
+    def provider_metrics
+      ProviderStats.call(
+        runtime_state: @runtime_state,
+        providers: @providers,
+        policy: @policy,
+        names: distribution_names
+      )
     end
 
     def percentage(part, total)
