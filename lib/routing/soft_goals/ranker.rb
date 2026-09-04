@@ -100,6 +100,8 @@ module Routing
 
       def unique_winner(goal, scores)
         ranked = ranked_scores(goal, scores)
+        return if ranked.empty?
+
         max = ranked.map(&:last).max
         tops = ranked.select { |_, score| score == max }
         return unless unique_preference?(tops, ranked, max)
@@ -108,7 +110,11 @@ module Routing
       end
 
       def ranked_scores(goal, scores)
-        @eligible.map { |provider| [provider.name, contribution_score(scores, provider, goal)] }
+        @eligible.filter_map do |provider|
+          next unless @policy.enabled?(goal::KEY, provider: provider.name)
+
+          [provider.name, contribution_score(scores, provider, goal)]
+        end
       end
 
       def unique_preference?(tops, ranked, max)

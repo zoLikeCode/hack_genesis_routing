@@ -4,6 +4,7 @@ module Routing
   module SoftGoals
     class FinancialObligation
       KEY = "financial_obligation"
+      SOFT_MAX_START = 0.8
 
       def self.call(provider, operation, _snapshot)
         boost = min_boost(provider)
@@ -31,7 +32,11 @@ module Routing
         return 0.0 if max.nil? || max.zero?
 
         projected = provider.daily_approved_amount + operation.amount
-        -(projected / max.to_f).clamp(0.0, 1.0)
+        ratio = projected / max.to_f
+        return 0.0 if ratio <= SOFT_MAX_START
+
+        span = 1.0 - SOFT_MAX_START
+        -((ratio - SOFT_MAX_START) / span).clamp(0.0, 1.0)
       end
       private_class_method :max_penalty
 

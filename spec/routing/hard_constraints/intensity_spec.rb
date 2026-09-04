@@ -22,6 +22,16 @@ RSpec.describe Routing::HardConstraints::Intensity do
     expect(described_class.call(fill_window(limit: nil, count: 10), operation)).to be_ok
   end
 
+  it "raises InvalidInputError when created_at is missing and a rate limit is set" do
+    provider = build_provider(requests_per_minute_limit: 2)
+    operation = build_operation(created_at: nil)
+
+    expect { described_class.call(provider, operation) }.to raise_error(
+      Routing::InvalidInputError,
+      "created_at required for intensity check"
+    )
+  end
+
   def fill_window(limit:, count:)
     provider = build_provider(requests_per_minute_limit: limit)
     count.times { |index| provider.record_request!(at - index) }

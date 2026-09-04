@@ -1,0 +1,387 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Архитектура роутинга выплат</title>
+  <style>
+    :root {
+      --bg: #f7f7f5;
+      --fg: #1a1a18;
+      --muted: #5c5c56;
+      --faint: #8a8a82;
+      --line: #d9d9d1;
+      --fill: #ecece6;
+      --card: #ffffff;
+      --accent: #1f6feb;
+      --on-accent: #ffffff;
+      --ok: #1a7f37;
+      --warn: #9a6700;
+      --bad: #cf222e;
+      --font: "Segoe UI", system-ui, -apple-system, sans-serif;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg: #1b1b1a;
+        --fg: #ecece6;
+        --muted: #b0b0a6;
+        --faint: #8a8a82;
+        --line: #3a3a36;
+        --fill: #2a2a26;
+        --card: #242422;
+        --accent: #4c8dff;
+        --on-accent: #0b1220;
+        --ok: #3fb950;
+        --warn: #d4a72c;
+        --bad: #f85149;
+      }
+    }
+    * { box-sizing: border-box; }
+    html, body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--fg);
+      font: 14px/1.5 var(--font);
+    }
+    main {
+      max-width: 980px;
+      margin: 0 auto;
+      padding: 32px 24px 64px;
+    }
+    h1 { font-size: 24px; line-height: 1.25; font-weight: 650; margin: 0 0 8px; }
+    h2 { font-size: 18px; line-height: 1.3; font-weight: 650; margin: 32px 0 10px; }
+    h3 { font-size: 16px; line-height: 1.3; font-weight: 650; margin: 0 0 8px; }
+    p { margin: 0 0 12px; }
+    .lede { color: var(--muted); }
+    .caption { color: var(--faint); font-size: 12px; margin-top: 8px; }
+    code {
+      font-family: ui-monospace, "Cascadia Code", Consolas, monospace;
+      font-size: 0.92em;
+      background: var(--fill);
+      padding: 0.1em 0.35em;
+      border-radius: 4px;
+    }
+    .stats {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 16px;
+      margin: 20px 0 8px;
+    }
+    .stat {
+      background: var(--card);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 14px 16px;
+    }
+    .stat b { display: block; font-size: 24px; font-weight: 650; }
+    .stat span { color: var(--muted); font-size: 12px; }
+    .split {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 24px;
+      align-items: start;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      background: var(--card);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      overflow: hidden;
+      font-size: 13px;
+    }
+    th, td {
+      text-align: left;
+      padding: 8px 10px;
+      border-bottom: 1px solid var(--line);
+      vertical-align: top;
+    }
+    th {
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--muted);
+      background: var(--fill);
+    }
+    tr:last-child td { border-bottom: 0; }
+    .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 8px; }
+    .dot-ok { background: var(--ok); }
+    .dot-bad { background: var(--bad); }
+    .dot-warn { background: var(--warn); }
+    .callout, .card {
+      background: var(--card);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 14px 16px;
+      margin: 16px 0 0;
+    }
+    .callout strong { display: block; margin-bottom: 4px; }
+    .card-title {
+      font-size: 12px;
+      color: var(--muted);
+      font-weight: 600;
+      margin: -14px -16px 12px;
+      padding: 8px 16px;
+      border-bottom: 1px solid var(--line);
+    }
+    .graph-wrap {
+      overflow-x: auto;
+      background: var(--card);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 8px;
+    }
+    svg text { font-family: var(--font); }
+    @media (max-width: 800px) {
+      .stats, .split { grid-template-columns: 1fr; }
+    }
+    @page { size: A4; margin: 14mm; }
+    @media print {
+      :root {
+        --bg: #ffffff;
+        --fg: #1a1a18;
+        --muted: #4a4a44;
+        --faint: #6a6a64;
+        --line: #cfcfc6;
+        --fill: #f1f1ec;
+        --card: #ffffff;
+        --accent: #1f6feb;
+        --on-accent: #ffffff;
+      }
+      body { background: #fff; }
+      main { max-width: none; padding: 0; }
+      .graph-wrap, table, .card, .callout, .stat { break-inside: avoid; }
+      h2 { break-after: avoid; }
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Архитектура роутинга выплат</h1>
+    <p class="lede">
+      Путь одной операции внутри <code>Routing::Engine</code>, <code>Routing::Router</code>
+      и <code>Routing::RuntimeState</code>. CLI не показан. CSV с историей на этот путь
+      не влияет: он используется только в отчёте.
+    </p>
+
+    <div class="stats">
+      <div class="stat"><b>8</b><span>Проверок hard-constraints</span></div>
+      <div class="stat"><b>7</b><span>Оценщиков soft-goals</span></div>
+      <div class="stat"><b>3</b><span>Исхода симуляции</span></div>
+    </div>
+
+    <h2>Исполнение одной операции</h2>
+    <p>
+      Вызов <code>Engine#route_one</code> снимает снимок живого состояния провайдеров,
+      допускает пул по hard-constraints, ранжирует его взвешенными soft-goals,
+      резервирует ёмкость относительно той же ревизии снимка и симулирует провайдера.
+      Отказ или таймаут основного провайдера повторяет цикл с его именем в <code>attempted</code>.
+      Пунктир — повтор попытки, а не второй параллельный путь.
+    </p>
+
+    <div class="graph-wrap">
+      <svg viewBox="0 0 720 928" width="720" height="928" role="img" aria-label="Граф исполнения роутинга от операции до решения">
+        <defs>
+          <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+            <path d="M 0 1.5 L 10 5 L 0 8.5 z" fill="#8a8a82" />
+          </marker>
+          <marker id="arrow-accent" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+            <path d="M 0 1.5 L 10 5 L 0 8.5 z" fill="#1f6feb" />
+          </marker>
+        </defs>
+        <g fill="none" stroke="#8a8a82" stroke-width="1.25" marker-end="url(#arrow)">
+          <path d="M 108 60 L 308 112" />
+          <path d="M 508 60 L 308 112" />
+          <path d="M 108 60 L 308 204" />
+          <path d="M 308 60 L 308 204" />
+          <path d="M 308 152 L 308 204" />
+          <path d="M 308 244 L 108 296" />
+          <path d="M 308 244 L 308 296" />
+          <path d="M 308 244 L 508 296" />
+          <path d="M 108 336 L 308 388" />
+          <path d="M 308 60 L 308 388" />
+          <path d="M 308 152 L 308 388" />
+          <path d="M 108 60 L 308 388" />
+          <path d="M 308 428 L 308 480" />
+          <path d="M 508 336 L 308 480" />
+          <path d="M 308 520 L 308 572" />
+          <path d="M 308 612 L 308 664" />
+          <path d="M 308 704 L 108 756" />
+          <path d="M 308 704 L 308 756" />
+          <path d="M 308 704 L 508 756" />
+          <path d="M 108 796 L 308 848" />
+          <path d="M 508 796 L 308 848" />
+          <path d="M 308 796 L 308 848" />
+          <path d="M 308 336 L 308 848" />
+        </g>
+        <g fill="none" stroke="#1f6feb" stroke-width="1.75" stroke-dasharray="5 4" marker-end="url(#arrow-accent)">
+          <path d="M 308 612 C 380 612, 380 112, 308 112" />
+          <path d="M 308 796 C 400 796, 400 112, 308 112" />
+          <path d="M 508 796 C 430 796, 430 112, 308 112" />
+        </g>
+        <text x="400" y="360" fill="#1f6feb" font-size="11">повтор</text>
+        <text x="408" y="470" fill="#1f6feb" font-size="11">повтор</text>
+
+        <g font-size="12" text-anchor="middle">
+          <g transform="translate(20,20)"><rect width="176" height="40" rx="6" fill="#ecece6" stroke="#5c5c56"/><text x="88" y="25" fill="#1a1a18">Операция</text></g>
+          <g transform="translate(220,20)"><rect width="176" height="40" rx="6" fill="#ecece6" stroke="#5c5c56"/><text x="88" y="25" fill="#1a1a18">Политика</text></g>
+          <g transform="translate(420,20)"><rect width="176" height="40" rx="6" fill="#ecece6" stroke="#5c5c56"/><text x="88" y="25" fill="#1a1a18">Пул провайдеров</text></g>
+          <g transform="translate(220,112)"><rect width="176" height="40" rx="6" fill="#ecece6" stroke="#5c5c56"/><text x="88" y="25" fill="#1a1a18">Снимок runtime</text></g>
+          <g transform="translate(220,204)"><rect width="176" height="40" rx="6" fill="#ecece6" stroke="#5c5c56"/><text x="88" y="25" fill="#1a1a18">Hard-фильтр</text></g>
+          <g transform="translate(20,296)"><rect width="176" height="40" rx="6" fill="#ecece6" stroke="#5c5c56"/><text x="88" y="25" fill="#1a1a18">Допущенные</text></g>
+          <g transform="translate(220,296)"><rect width="176" height="40" rx="6" fill="#ecece6" stroke="#5c5c56"/><text x="88" y="25" fill="#1a1a18">Пропущенные</text></g>
+          <g transform="translate(420,296)"><rect width="176" height="40" rx="6" fill="#ecece6" stroke="#5c5c56"/><text x="88" y="25" fill="#1a1a18">Fallback</text></g>
+          <g transform="translate(220,388)"><rect width="176" height="40" rx="6" fill="#ecece6" stroke="#5c5c56"/><text x="88" y="25" fill="#1a1a18">Soft-ранжирование</text></g>
+          <g transform="translate(220,480)"><rect width="176" height="40" rx="6" fill="#ecece6" stroke="#5c5c56"/><text x="88" y="25" fill="#1a1a18">Выбор провайдера</text></g>
+          <g transform="translate(220,572)"><rect width="176" height="40" rx="6" fill="#ecece6" stroke="#5c5c56"/><text x="88" y="25" fill="#1a1a18">try_reserve!</text></g>
+          <g transform="translate(220,664)"><rect width="176" height="40" rx="6" fill="#ecece6" stroke="#5c5c56"/><text x="88" y="25" fill="#1a1a18">ProviderInvoker</text></g>
+          <g transform="translate(20,756)"><rect width="176" height="40" rx="6" fill="#ecece6" stroke="#5c5c56"/><text x="88" y="25" fill="#1a1a18">approve!</text></g>
+          <g transform="translate(220,756)"><rect width="176" height="40" rx="6" fill="#ecece6" stroke="#5c5c56"/><text x="88" y="25" fill="#1a1a18">reject!</text></g>
+          <g transform="translate(420,756)"><rect width="176" height="40" rx="6" fill="#ecece6" stroke="#5c5c56"/><text x="88" y="25" fill="#1a1a18">mark_timeout!</text></g>
+          <g transform="translate(220,848)"><rect width="176" height="40" rx="6" fill="#1f6feb" stroke="#1f6feb"/><text x="88" y="25" fill="#ffffff" font-weight="650">Решение</text></g>
+        </g>
+      </svg>
+    </div>
+    <p class="caption">Источник: lib/routing/engine.rb, router.rb, runtime_state.rb · одна операция, включая каскадные повторы. Сплошные рёбра — прямой поток; пунктир — повтор.</p>
+
+    <h2>Что передаётся на каждом шаге</h2>
+    <table>
+      <thead><tr><th>Откуда</th><th>Куда</th><th>Данные</th></tr></thead>
+      <tbody>
+        <tr><td>RuntimeState#snapshot</td><td>Router</td><td>Замороженные копии провайдеров, SoftGoals::Snapshot (счётчики сессии + дневной объём), ревизия</td></tr>
+        <tr><td>HardConstraints::Filter</td><td>Ranker / Engine</td><td>допущенные основные провайдеры, пропуски, fallback или nil</td></tr>
+        <tr><td>SoftGoals::Ranker</td><td>Selector</td><td>упорядоченный список, Score по провайдеру (итог + вклады), конфликты, пометки о недостижимых целях</td></tr>
+        <tr><td>Selector / Filter</td><td>Engine</td><td>Selection: предпочтительный основной либо fallback, если ранжируемый пул пуст</td></tr>
+        <tr><td>Engine</td><td>RuntimeState#try_reserve!</td><td>Выбранный Provider, Operation, expected_revision</td></tr>
+        <tr><td>ProviderInvoker</td><td>Engine</td><td>{ result: approved|rejected|expired, latency_sec }</td></tr>
+        <tr><td>RouteContext</td><td>Decision</td><td>attempts[], накопленный latency_sec, selected_provider, simulated_result</td></tr>
+      </tbody>
+    </table>
+
+    <h2>Слои</h2>
+    <p>Библиотека разделяет допуск, оценку, оркестрацию и состояние: новая проверка или цель — это класс в реестре, а не ветка в цикле попыток.</p>
+    <table>
+      <thead><tr><th>Слой</th><th>Типы</th><th>Ответственность</th></tr></thead>
+      <tbody>
+        <tr><td>Входные сущности</td><td>Operation, Provider, ProviderPool, Policy</td><td>Типизированные записи из JSON/YAML. Политика хранит веса стратегий, профили провайдеров, имя fallback и зерно симуляции.</td></tr>
+        <tr><td>Допуск</td><td>HardConstraints::*</td><td>Первая непройденная проверка останавливает провайдера. Статус, диапазон суммы, дневной лимит, in-progress count/amount, банк, маржа, реквизиты, RPM.</td></tr>
+        <tr><td>Оценка</td><td>SoftGoals::*</td><td>Только допущенные основные провайдеры. Взвешенная сумма; ничья — по provider.priority, затем по имени. Fallback здесь не участвует.</td></tr>
+        <tr><td>Выбор</td><td>Router, Selector</td><td>Router вызывает Filter, затем Ranker, затем Selector. Selector возвращает ranking.preferred. Если он nil, Router отдаёт hard-допустимый fallback.</td></tr>
+        <tr><td>Оркестрация</td><td>Engine, RouteContext</td><td>Онлайн-инварианты (уникальный id, неубывающий created_at), цикл попыток, журнал attempts, сумма latency, сборка Decision.</td></tr>
+        <tr><td>Состояние</td><td>RuntimeState, Reservation, счётчики Provider</td><td>Mutex и ревизия. Резерв атомарный: повторная проверка hard-constraints на живом провайдере.</td></tr>
+      </tbody>
+    </table>
+
+    <div class="split" style="margin-top:28px">
+      <section>
+        <h3>Hard-constraints</h3>
+        <p class="lede">Бинарный допуск. Отказ пишет skipped-попытку и убирает провайдера из пула этой операции.</p>
+        <table>
+          <thead><tr><th>Проверка</th><th>Пропуск, если</th></tr></thead>
+          <tbody>
+            <tr><td>Status</td><td>status != "active"</td></tr>
+            <tr><td>AmountRange</td><td>сумма вне limit_amount_min/max</td></tr>
+            <tr><td>DailyLimit</td><td>committed + reserved + amount &gt; daily_amount_limit</td></tr>
+            <tr><td>InProgress</td><td>превышен лимит числа или суммы in-progress</td></tr>
+            <tr><td>BankFilter</td><td>банк не в allowlist или в exclude</td></tr>
+            <tr><td>Margin</td><td>provider_margin &gt; merchant_margin без waiver</td></tr>
+            <tr><td>Requisites</td><td>available_requisites == 0</td></tr>
+            <tr><td>Intensity</td><td>запросов за последние 60 с ≥ RPM-лимита</td></tr>
+          </tbody>
+        </table>
+      </section>
+      <section>
+        <h3>Soft-goals</h3>
+        <p class="lede">Каждый вклад в [-1, 1]. Политика умножает на вес профиля провайдера. Итоги сравнимы: веса поставленных профилей суммируются в 1.0.</p>
+        <table>
+          <thead><tr><th>Цель</th><th>Оценка</th></tr></thead>
+          <tbody>
+            <tr><td>count_share</td><td>дефицит относительно traffic_percentage</td></tr>
+            <tr><td>volume_share</td><td>дефицит относительно volume_share_pct</td></tr>
+            <tr><td>conversion</td><td>conversion_24h в [0, 1]</td></tr>
+            <tr><td>cascade_priority</td><td>1 / priority</td></tr>
+            <tr><td>amount_band</td><td>amount / limit_amount_max: выше у более узкого подходящего потолка</td></tr>
+            <tr><td>financial_obligation</td><td>буст ниже min; штраф только от 80% soft-max</td></tr>
+            <tr><td>load_balance</td><td>1 − макс. утилизация in-progress и RPM</td></tr>
+          </tbody>
+        </table>
+      </section>
+    </div>
+
+    <h2>Резерв и счётчики</h2>
+    <p>
+      <code>try_reserve!</code> успешен, только если ревизия снимка ещё актуальна
+      и живой провайдер по-прежнему проходит hard-constraints. Затем увеличиваются
+      in-progress count/amount, daily_reserved_amount, pending-счётчик сессии
+      и окно запросов за 60 секунд. <code>available_requisites</code> уменьшается на резерве
+      и возвращается на release.
+    </p>
+    <table>
+      <thead><tr><th>Исход</th><th>Счётчики</th><th>Цикл попыток</th></tr></thead>
+      <tbody>
+        <tr>
+          <td><span class="dot dot-ok"></span>approved</td>
+          <td>Снять in-progress и daily_reserved; зафиксировать daily_approved; pending → committed count</td>
+          <td>Стоп. Decision.selected_provider — этот провайдер.</td>
+        </tr>
+        <tr>
+          <td><span class="dot dot-bad"></span>rejected</td>
+          <td>Снять in-progress и daily_reserved; обнулить pending; не коммитить оборот</td>
+          <td>Если fallback: стоп с simulated_result rejected. Иначе skip (simulated_rejected), имя в attempted, новый снимок.</td>
+        </tr>
+        <tr>
+          <td><span class="dot dot-warn"></span>expired</td>
+          <td>Снять in-progress и daily_reserved; обнулить pending; не коммитить оборот</td>
+          <td>Как rejected: каскад на следующего, если это не fallback. Иначе стоп с simulated_result expired.</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <div class="callout">
+      <strong>Правило выбора</strong>
+      Предпочтительный = наибольший взвешенный soft-score среди оставшихся допущенных
+      основных провайдеров. Остальные допущенные попадают в <code>attempts</code> как
+      <code>lower_soft_score</code>. Fallback (<code>spacepayments</code>) держится вне ранжирования
+      и используется, только когда этот набор пуст. Устаревший резерв попытку не тратит:
+      цикл снова снимает снимок с тем же <code>attempted</code>. Отказ и таймаут основного
+      провайдера одинаково исключают его и переходят к следующему.
+    </div>
+
+    <h2>Подключение стратегий</h2>
+    <p>
+      Смесь стратегий меняется только в <code>config/routing_policy.yml</code>.
+      Прямое включение стратегий и режим профилей взаимно исключают друг друга.
+      Поставляемый файл использует <code>active_profile: balanced</code> и
+      <code>provider_profiles</code>: vipay, payflow и quickpay считаются разными
+      векторами весов, затем сравниваются по итогу.
+    </p>
+    <table>
+      <thead><tr><th>Стратегия из брифа</th><th>Реализация</th></tr></thead>
+      <tbody>
+        <tr><td>Доля по числу заявок</td><td>count_share + committed/pending счётчики сессии</td></tr>
+        <tr><td>Доля по объёму</td><td>volume_share + daily_approved_amount (committed + reserved)</td></tr>
+        <tr><td>Каскадная очередь</td><td>cascade_priority, затем имя; повторы переранжируют оставшихся</td></tr>
+        <tr><td>По сумме платежа</td><td>hard AmountRange плюс amount_band (доля суммы от max — более узкий потолок)</td></tr>
+        <tr><td>По конверсии</td><td>цель conversion по conversion_24h</td></tr>
+        <tr><td>По интенсивности</td><td>hard Intensity (RPM); load_balance учитывает in-progress и RPM</td></tr>
+        <tr><td>Финансовые обязательства</td><td>financial_obligation по daily_turnover_min/max</td></tr>
+      </tbody>
+    </table>
+
+    <div class="card">
+      <div class="card-title">Router.call</div>
+      <p>
+        Оставшиеся провайдеры = пул минус <code>attempted</code>. Filter относит каждого
+        к допущенным основным, пропущенным основным или fallback. Ranker считает только
+        <code>evaluation.eligible</code>. Selector возвращает <code>ranking.preferred</code>.
+        Engine резервирует этого провайдера либо fallback, если preferred равен nil.
+        Допущенные, но не выбранные провайдеры записываются в attempts с причиной
+        <code>lower_soft_score</code>.
+      </p>
+      <p class="caption" style="margin:0">
+        Новая hard-проверка: добавить в <code>HardConstraints::CHECKS</code>. Новая soft-цель:
+        добавить в <code>SoftGoals::GOALS</code> и ключ в YAML. Engine не ветвится по именам стратегий.
+      </p>
+    </div>
+  </main>
+</body>
+</html>

@@ -14,4 +14,8 @@ module Routing
   def self.assert(condition, message)
     raise InvariantError, message unless condition
   end
+
+  def self.input!(condition, message)
+    raise InvalidInputError, message unless condition
+  end
 end

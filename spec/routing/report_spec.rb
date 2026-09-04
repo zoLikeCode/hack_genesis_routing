@@ -29,7 +29,7 @@ RSpec.describe Routing::Report do
   it "includes the required report keys" do
     expect(report.keys).to include(
       "period", "total_operations", "distribution", "outcomes", "history_baseline",
-      "routing_profiles", "unassigned_operations", "skip_reasons",
+      "routing_profiles", "unassigned_operations", "rejected_operations", "skip_reasons",
       "projected_daily_utilization", "recommendations"
     )
   end
@@ -66,7 +66,8 @@ RSpec.describe Routing::Report do
     )
 
     expect(rejected_report.dig("distribution", "vipay", "count")).to eq(0)
-    expect(rejected_report.fetch("unassigned_operations")).to eq(1)
+    expect(rejected_report.fetch("rejected_operations")).to eq(1)
+    expect(rejected_report.fetch("unassigned_operations")).to eq(0)
   end
 
   it "includes history as a separate analytics baseline" do

@@ -24,6 +24,13 @@ RSpec.describe Routing::SoftGoals::FinancialObligation do
     expect(result.reason).to eq("turnover_above_soft_max")
   end
 
+  it "does not penalize turnover well below daily_turnover_max" do
+    provider = build_provider(daily_approved_amount: 1_000_000, daily_turnover_min: nil,
+                              daily_turnover_max: 4_500_000)
+    expect(described_class.call(provider, operation, empty_snapshot))
+      .to have_attributes(score: 0.0, reason: "soft_goal_neutral")
+  end
+
   it "does not skip a provider that misses a financial target" do
     provider = build_provider(daily_approved_amount: 4_400_000, daily_turnover_max: 4_500_000)
     expect(described_class.call(provider, operation, empty_snapshot)).to be_a(Routing::SoftGoals::Contribution)

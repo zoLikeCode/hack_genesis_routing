@@ -16,6 +16,14 @@ RSpec.describe Routing::Provider do
       expect(provider.request_count_at(at)).to eq(1)
     end
 
+    it "consumes a requisite on reserve and restores it on release", :aggregate_failures do
+      provider.reserve!(15_000, at: at)
+      expect(provider.available_requisites).to eq(11)
+
+      provider.release!(15_000)
+      expect(provider.available_requisites).to eq(12)
+    end
+
     it "reserves daily capacity before the provider request" do
       provider.reserve!(15_000, at: at)
 

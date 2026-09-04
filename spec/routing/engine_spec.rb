@@ -40,7 +40,7 @@ RSpec.describe Routing::Engine do
       expect(decisions.first.simulated_result).to eq("rejected")
     end
 
-    it "keeps a timed-out provider selected without starting fallback", :aggregate_failures do
+    it "cascades to the next eligible provider after a simulated timeout", :aggregate_failures do
       providers = two_primary_pool
       engine = described_class.new(
         [build_operation],
@@ -51,32 +51,24 @@ RSpec.describe Routing::Engine do
 
       decision = engine.call.first
 
-      expect(decision).to have_attributes(selected_provider: "vipay", simulated_result: "expired")
-      expect(decision.attempts.count { |attempt| attempt.decision == "selected" }).to eq(1)
-      expect(decision.attempts.last.details).to include("timeout reservation retained")
-      expect(engine.state.reservations.first.status).to eq("timed_out")
-      expect(providers.fetch("vipay").in_progress_count).to eq(1)
+      expect(decision).to have_attributes(selected_provider: "payflow", simulated_result: "approved")
+      expect(decision.attempts).to include(
+        have_attributes(provider: "vipay", decision: "skipped", reason: "simulated_expired")
+      )
+      expect(providers.fetch("vipay").in_progress_count).to eq(0)
     end
 
-    it "applies a late timeout cancellation only to current state", :aggregate_failures do
-      providers = two_primary_pool
-      engine = described_class.new(
-        [build_operation],
-        providers,
-        build_policy("cascade_priority" => { "enabled" => true, "weight" => 1.0 }),
-        sequenced_simulator(%w[expired])
-      )
-      decision = engine.call.first
+    it "records eligible providers that lost the soft-score comparison" do
+      decision = described_class.call(
+        operations: [build_operation],
+        providers: two_primary_pool,
+        policy: build_policy,
+        simulator: sequenced_simulator(%w[approved])
+      ).first
 
-      engine.state.resolve_timeout!(
-        operation_id: decision.operation_id,
-        provider_name: decision.selected_provider,
-        result: "cancelled"
+      expect(decision.attempts).to include(
+        have_attributes(decision: "skipped", reason: "lower_soft_score")
       )
-
-      expect(decision.simulated_result).to eq("expired")
-      expect(engine.state.snapshot.soft_goals.total_count).to eq(0)
-      expect(providers.fetch("vipay").in_progress_count).to eq(0)
     end
 
     it "adds latency across rejected cascade attempts" do

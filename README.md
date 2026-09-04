@@ -59,13 +59,13 @@ reserved atomically against that revision and the unchanged hard constraints are
 Pending count, volume, daily capacity, and in-progress load are visible to subsequent snapshots.
 
 - `approved`: convert the pending reservation into committed traffic and approved turnover;
-- `rejected`: roll back provisional counters and reroute through the next eligible provider on a fresh snapshot;
-- `expired`: keep the reservation, treat the provider as the current final selection, and do not start fallback before a
-  status-check;
-- late cancellation: call `RuntimeState#resolve_timeout!` to compensate current counters without replaying earlier decisions.
+- `rejected` or `expired`: roll back provisional counters and reroute through the next eligible provider on a fresh snapshot;
+- if the fallback provider is the one that refused or timed out, stop with that `simulated_result`;
+- late cancellation of a still-open timeout: call `RuntimeState#resolve_timeout!` to compensate current counters without replaying earlier decisions.
 
 Every provider attempt receives a stable `<operation_id>:<provider>` idempotency key when the provider client accepts keyword
-context. Decision details include the selected provider profile, total score, and weighted soft-goal contributions.
+context. Decision details include the selected provider profile, total score, weighted soft-goal contributions, and
+goal disagreements. Eligible providers that lost the comparison are recorded as `lower_soft_score` skips.
 
 Historical rows are not mixed into the test queue traffic denominator. They are included separately in
 `routing_report_test.json` as a baseline for conversion, latency, approved volume, and profile-weight recommendations.

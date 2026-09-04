@@ -11,8 +11,23 @@ RSpec.describe Routing::SoftGoals::LoadBalance do
     expect(free_score).to be > busy_score
   end
 
-  it "is neutral when both load limits are unlimited" do
-    provider = build_provider(in_progress_count_limit: nil, in_progress_amount_limit: nil)
+  it "treats RPM pressure as load" do
+    at = Time.iso8601("2026-07-30T09:05:00+03:00")
+    free = build_provider(requests_per_minute_limit: 10, in_progress_count_limit: nil, in_progress_amount_limit: nil)
+    busy = build_provider(requests_per_minute_limit: 10, in_progress_count_limit: nil, in_progress_amount_limit: nil)
+    8.times { busy.record_request!(at) }
+    operation = build_operation(created_at: at.iso8601)
+
+    expect(described_class.call(free, operation, empty_snapshot).score)
+      .to be > described_class.call(busy, operation, empty_snapshot).score
+  end
+
+  it "is neutral when load limits are unlimited" do
+    provider = build_provider(
+      in_progress_count_limit: nil,
+      in_progress_amount_limit: nil,
+      requests_per_minute_limit: nil
+    )
 
     expect(described_class.call(provider, build_operation, empty_snapshot).score).to eq(0.0)
   end

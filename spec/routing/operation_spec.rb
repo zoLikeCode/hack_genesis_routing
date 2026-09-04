@@ -13,12 +13,12 @@ RSpec.describe Routing::Operation do
     end
 
     it "rejects a missing operation_id" do
-      expect { described_class.new("amount" => 1) }.to raise_error(Routing::InvariantError)
+      expect { described_class.new("amount" => 1) }.to raise_error(Routing::InvalidInputError)
     end
 
     it "rejects a negative amount" do
       expect { described_class.new("operation_id" => "op_x", "amount" => -1) }
-        .to raise_error(Routing::InvariantError)
+        .to raise_error(Routing::InvalidInputError)
     end
 
     it "rejects an invalid created_at" do

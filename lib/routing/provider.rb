@@ -31,9 +31,11 @@ module Routing
 
     def reserve!(amount, at:)
       Routing.assert(amount.is_a?(Numeric) && amount >= 0, "reserve amount must be non-negative")
+      Routing.assert(@available_requisites.positive?, "reserve without available requisites")
       @in_progress_count += 1
       @in_progress_amount += amount
       @daily_reserved_amount += amount
+      @available_requisites -= 1
       record_request!(at) unless at.nil?
     end
 
@@ -50,6 +52,7 @@ module Routing
       @in_progress_count -= 1
       @in_progress_amount -= amount
       @daily_reserved_amount -= amount
+      @available_requisites += 1
     end
 
     def daily_approved_amount
@@ -83,17 +86,17 @@ module Routing
     private
 
     def stringify_keys(attrs)
-      Routing.assert(attrs.respond_to?(:to_h), "provider attrs must be a Hash")
+      Routing.input!(attrs.respond_to?(:to_h), "provider attrs must be a Hash")
       attrs.to_h.transform_keys(&:to_s)
     end
 
     def assign_identity(attrs)
       @name = attrs["payment_system"]
-      Routing.assert(@name.is_a?(String) && !@name.empty?, "payment_system is required")
+      Routing.input!(@name.is_a?(String) && !@name.empty?, "payment_system is required")
       @status = attrs["status"]
-      Routing.assert(@status.is_a?(String) && !@status.empty?, "status is required")
+      Routing.input!(@status.is_a?(String) && !@status.empty?, "status is required")
       @traffic_percentage = attrs.fetch("traffic_percentage", 0)
-      Routing.assert(@traffic_percentage.is_a?(Numeric), "traffic_percentage must be numeric")
+      Routing.input!(@traffic_percentage.is_a?(Numeric), "traffic_percentage must be numeric")
     end
 
     def assign_limits(attrs)
@@ -148,17 +151,17 @@ module Routing
     def optional_positive_integer(value, field)
       return if value.nil?
 
-      Routing.assert(value.is_a?(Integer) && value.positive?, "#{field} must be a positive integer")
+      Routing.input!(value.is_a?(Integer) && value.positive?, "#{field} must be a positive integer")
       value
     end
 
     def required_number(value, field)
-      Routing.assert(value.is_a?(Numeric), "#{field} must be numeric")
+      Routing.input!(value.is_a?(Numeric), "#{field} must be numeric")
       value
     end
 
     def required_integer(value, field)
-      Routing.assert(value.is_a?(Integer) && value >= 0, "#{field} must be a non-negative integer")
+      Routing.input!(value.is_a?(Integer) && value >= 0, "#{field} must be a non-negative integer")
       value
     end
 

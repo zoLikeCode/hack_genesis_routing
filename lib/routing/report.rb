@@ -30,7 +30,8 @@ module Routing
         "outcomes" => outcomes,
         "history_baseline" => history_baseline,
         "routing_profiles" => routing_profiles,
-        "unassigned_operations" => rejected_decisions.size,
+        "unassigned_operations" => 0,
+        "rejected_operations" => rejected_decisions.size,
         "skip_reasons" => skip_reasons,
         "projected_daily_utilization" => projected_daily_utilization,
         "recommendations" => recommendations
@@ -69,9 +70,10 @@ module Routing
     end
 
     def share_pct(count)
-      return 0 if @decisions.empty?
+      total = accepted_decisions.size
+      return 0 if total.zero?
 
-      (100.0 * count / @decisions.size).round
+      (100.0 * count / total).round
     end
 
     def skip_reasons
@@ -186,7 +188,7 @@ module Routing
       total = @decisions.count { |decision| decision.simulated_result == "expired" }
       return [] if total.zero?
 
-      ["#{total} operations await status-check - keep reservations and do not start fallback"]
+      ["#{total} operations ended on timeout at the last provider - review fallback conversion or add capacity"]
     end
 
     def conversion_recs

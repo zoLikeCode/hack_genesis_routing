@@ -13,12 +13,13 @@ module Routing
       score = selection.ranking.scores.fetch(selection.provider.name)
       profile = policy.profile_for(selection.provider.name) || "individual"
       parts = ["profile=#{profile}", "total_score=#{score.total.round(4)}"]
-      (parts + contributions(score, selection.provider.name, policy) + selection.ranking.notes).join("; ")
+      (parts + contributions(score, selection.provider.name, policy) +
+        selection.ranking.notes + disagreement_notes(selection.ranking)).join("; ")
     end
     private_class_method :score_details
 
     def self.outcome_details(result)
-      return "timeout reservation retained pending status-check" if result == "expired"
+      return "reservation rolled back after timeout" if result == "expired"
 
       "reservation rolled back after explicit rejection" if result == "rejected"
     end
@@ -31,5 +32,16 @@ module Routing
       end
     end
     private_class_method :contributions
+
+    def self.disagreement_notes(ranking)
+      ranking.conflicts.filter_map do |conflict|
+        next unless conflict.kind == SoftGoals::Reasons::GOAL_DISAGREEMENT
+
+        details = conflict.details
+        "goal_disagreement #{details.fetch('goal_a')}=#{details.fetch('preferred_a')} " \
+          "vs #{details.fetch('goal_b')}=#{details.fetch('preferred_b')}"
+      end
+    end
+    private_class_method :disagreement_notes
   end
 end

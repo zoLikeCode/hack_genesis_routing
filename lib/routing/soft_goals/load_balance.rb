@@ -5,10 +5,11 @@ module Routing
     class LoadBalance
       KEY = "load_balance"
 
-      def self.call(provider, _operation, _snapshot)
+      def self.call(provider, operation, _snapshot)
         utilizations = [
           utilization(provider.in_progress_count, provider.in_progress_count_limit),
-          utilization(provider.in_progress_amount, provider.in_progress_amount_limit)
+          utilization(provider.in_progress_amount, provider.in_progress_amount_limit),
+          rpm_utilization(provider, operation)
         ].compact
         return neutral if utilizations.empty?
 
@@ -18,9 +19,17 @@ module Routing
           name: KEY,
           score: score,
           reason: load >= 0.75 ? Reasons::HIGH_CURRENT_LOAD : Reasons::AVAILABLE_CAPACITY,
-          details: "maximum in-progress utilization #{(load * 100).round(2)}%"
+          details: "maximum load utilization #{(load * 100).round(2)}%"
         )
       end
+
+      def self.rpm_utilization(provider, operation)
+        limit = provider.requests_per_minute_limit
+        return if limit.nil? || operation.created_at.nil?
+
+        utilization(provider.request_count_at(operation.created_at), limit)
+      end
+      private_class_method :rpm_utilization
 
       def self.utilization(value, limit)
         return if limit.nil?

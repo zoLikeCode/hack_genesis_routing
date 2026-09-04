@@ -98,10 +98,6 @@ module Routing
         @state.approve!(reservation)
         return complete(operation, selection, context, outcome)
       end
-      if result == "expired"
-        @state.mark_timeout!(reservation)
-        return complete(operation, selection, context, outcome)
-      end
 
       @state.reject!(reservation)
       return complete(operation, selection, context, outcome) if selection.fallback?
@@ -111,37 +107,41 @@ module Routing
     end
 
     def simulate_try(provider, operation, reservation)
-      ProviderInvoker.call(
+      finished = false
+      outcome = ProviderInvoker.call(
         client: @simulator,
         provider: provider,
         operation: operation,
         reservation: reservation
       )
-    rescue StandardError
-      @state.reject!(reservation) if reservation.active?
-      raise
+      finished = true
+      outcome
+    ensure
+      @state.reject!(reservation) if reservation.active? && !finished
     end
 
     def complete(operation, selection, context, outcome)
-      provider = selection.provider
-      context.add_attempt!(
-        HardConstraints::Attempt.new(
-          provider: provider.name,
-          decision: "selected",
-          reason: selected_reason(selection),
-          details: DecisionExplainer.details(
-            selection: selection,
-            policy: @policy,
-            result: outcome.fetch(:result)
-          )
-        )
-      )
+      record_considered_skips!(selection, context)
+      context.add_attempt!(selected_attempt(selection, outcome))
       Decision.new(
         operation_id: operation.id,
-        selected_provider: provider.name,
+        selected_provider: selection.provider.name,
         attempts: context.attempts,
         simulated_result: outcome.fetch(:result),
         latency_sec: context.total_latency
+      )
+    end
+
+    def selected_attempt(selection, outcome)
+      HardConstraints::Attempt.new(
+        provider: selection.provider.name,
+        decision: "selected",
+        reason: selected_reason(selection),
+        details: DecisionExplainer.details(
+          selection: selection,
+          policy: @policy,
+          result: outcome.fetch(:result)
+        )
       )
     end
 
@@ -165,6 +165,25 @@ module Routing
       return if @last_created_at.nil? || operation.created_at.nil? || operation.created_at >= @last_created_at
 
       raise InvalidInputError, "operations must be ordered by created_at"
+    end
+
+    def record_considered_skips!(selection, context)
+      return if selection.fallback?
+
+      winner = selection.provider
+      winner_score = selection.ranking.scores.fetch(winner.name)
+      selection.ranking.ordered.each do |provider|
+        next if provider.name == winner.name
+
+        score = selection.ranking.scores.fetch(provider.name)
+        context.add_attempt!(
+          skip_attempt(
+            provider.name,
+            SoftGoals::Reasons::LOWER_SOFT_SCORE,
+            "total_score=#{score.total.round(4)} vs #{winner.name} #{winner_score.total.round(4)}"
+          )
+        )
+      end
     end
 
     def skip_attempt(name, reason, details)

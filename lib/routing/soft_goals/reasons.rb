@@ -16,6 +16,7 @@ module Routing
       TURNOVER_ABOVE_SOFT_MAX = "turnover_above_soft_max"
       ONLY_ELIGIBLE_PROVIDER = "only_eligible_provider"
       HIGHEST_SOFT_SCORE = "highest_soft_score"
+      LOWER_SOFT_SCORE = "lower_soft_score"
       NEUTRAL = "soft_goal_neutral"
       UNMET_COUNT_SHARE = "unmet_count_share"
       UNMET_VOLUME_SHARE = "unmet_volume_share"

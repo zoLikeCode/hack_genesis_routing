@@ -8,7 +8,8 @@ module Routing
         return Result.ok if limit.nil?
 
         at = operation.created_at
-        Routing.assert(!at.nil?, "created_at required for intensity check")
+        raise InvalidInputError, "created_at required for intensity check" if at.nil?
+
         count = provider.request_count_at(at)
         return Result.ok if count < limit
 

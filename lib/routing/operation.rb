@@ -9,11 +9,11 @@ module Routing
     def initialize(attrs)
       attrs = stringify_keys(attrs)
       @id = attrs["operation_id"]
-      Routing.assert(@id.is_a?(String) && !@id.empty?, "operation_id is required")
+      Routing.input!(@id.is_a?(String) && !@id.empty?, "operation_id is required")
 
       @amount = attrs["amount"]
-      Routing.assert(@amount.is_a?(Numeric), "amount must be numeric")
-      Routing.assert(@amount >= 0, "amount must be non-negative")
+      Routing.input!(@amount.is_a?(Numeric), "amount must be numeric")
+      Routing.input!(@amount >= 0, "amount must be non-negative")
 
       @bank = attrs["bank"]
       @card_brand = attrs["card_brand"]
@@ -23,14 +23,14 @@ module Routing
 
     def self.load_queue(path)
       payload = JsonFile.read(path)
-      Routing.assert(payload.is_a?(Array), "operations queue must be an array")
+      Routing.input!(payload.is_a?(Array), "operations queue must be an array")
       payload.map { |row| new(row) }
     end
 
     private
 
     def stringify_keys(attrs)
-      Routing.assert(attrs.respond_to?(:to_h), "operation attrs must be a Hash")
+      Routing.input!(attrs.respond_to?(:to_h), "operation attrs must be a Hash")
       attrs.to_h.transform_keys(&:to_s)
     end
 
