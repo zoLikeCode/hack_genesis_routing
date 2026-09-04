@@ -62,6 +62,23 @@ RSpec.describe Routing::StatusChecker do
     expect(state.providers.fetch("vipay").in_progress_count).to eq(1)
   end
 
+  it "escalates a conflicting terminal result to manual review", :aggregate_failures do
+    checker, state, reservation, now = build_checker(statuses: %w[cancelled])
+    task = checker.schedule(reservation, timed_out_at: now)
+    state.resolve_timeout!(
+      operation_id: reservation.operation_id,
+      provider_name: reservation.provider_name,
+      result: "approved"
+    )
+
+    result = checker.run_due(now: now + 5)
+
+    expect(result).to include("checked" => 1, "manual_review" => 1, "resolved" => 0)
+    expect(task).to have_attributes(status: "manual_review", last_result: "cancelled")
+    expect(task.last_error).to include("reservation is already approved")
+    expect(reservation.status).to eq("approved")
+  end
+
   def build_checker(statuses:, config: status_config)
     provider = build_provider
     pool = Routing::ProviderPool.new([provider])

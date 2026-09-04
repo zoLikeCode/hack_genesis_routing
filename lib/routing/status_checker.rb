@@ -47,6 +47,12 @@ module Routing
       @mutex.synchronize { @tasks.values.dup.freeze }
     end
 
+    def next_check_at
+      @mutex.synchronize do
+        @tasks.values.select(&:scheduled?).filter_map(&:next_check_at).min
+      end
+    end
+
     def summary
       snapshot = tasks
       counts = snapshot.map(&:status).tally
@@ -107,8 +113,22 @@ module Routing
         provider_name: task.reservation.provider_name,
         result: status
       )
+      unless expected_settlement(status) == reservation.status
+        return resolve_conflict(task, status, reservation, totals)
+      end
+
       @mutex.synchronize { task.resolve!(result: reservation.status) }
       totals["resolved"] += 1
+    end
+
+    def resolve_conflict(task, status, reservation, totals)
+      error = "status-check returned #{status}, but reservation is already #{reservation.status}"
+      @mutex.synchronize { task.manual_review!(result: status, error: error) }
+      totals["manual_review"] += 1
+    end
+
+    def expected_settlement(status)
+      status == "approved" ? "approved" : "rejected"
     end
 
     def retry_or_escalate(task, now, status, totals, error: nil)

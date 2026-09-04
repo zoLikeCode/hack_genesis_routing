@@ -6,7 +6,7 @@ module Routing
 
     FALLBACK_SELECTED = "fallback_selected"
 
-    attr_reader :state, :status_checker
+    attr_reader :state, :status_checker, :status_check_runner
 
     def self.call(operations:, providers:, policy:, simulator: nil, state: nil)
       new(operations, providers, policy, simulator, state: state).call
@@ -25,12 +25,15 @@ module Routing
       Routing.assert(@state.is_a?(RuntimeState), "state must be Routing::RuntimeState")
       Routing.assert(@state.providers.equal?(providers), "runtime state must own the provider pool")
       @status_checker = build_status_checker
+      @status_check_runner = StatusCheckRunner.new(checker: @status_checker)
       @processed_ids = {}
       @last_created_at = nil
     end
 
     def call
-      @operations.each_with_object([]) { |operation, decisions| decisions << route_one(operation) }
+      decisions = @operations.each_with_object([]) { |operation, result| result << route_one(operation) }
+      @status_check_runner.drain
+      decisions
     end
 
     def route_one(operation)
@@ -114,7 +117,7 @@ module Routing
       end
       if result == "expired"
         @state.mark_timeout!(reservation)
-        @status_checker.schedule(reservation, timed_out_at: timeout_time(operation, context))
+        @status_check_runner.schedule(reservation, timed_out_at: timeout_time(operation, context))
         return complete(operation, selection, context, outcome)
       end
 
@@ -187,7 +190,7 @@ module Routing
     end
 
     def run_due_status_checks(operation)
-      @status_checker.run_due(now: operation.created_at) unless operation.created_at.nil?
+      @status_check_runner.run_due(now: operation.created_at) unless operation.created_at.nil?
     end
 
     def timeout_time(operation, context)

@@ -116,6 +116,42 @@ RSpec.describe Routing::Engine do
       expect(reservation.status).to eq("rejected")
     end
 
+    it "settles a timeout from the end of the batch", :aggregate_failures do
+      providers = two_primary_pool
+      client = status_client(call_results: %w[expired], status_results: %w[approved])
+      policy = Routing::Policy.new(
+        "status_check" => status_check_config,
+        "strategies" => { "cascade_priority" => { "enabled" => true, "weight" => 1.0 } }
+      )
+
+      engine = described_class.new([build_operation], providers, policy, client)
+      decision = engine.call.first
+
+      expect(decision).to have_attributes(selected_provider: "vipay", simulated_result: "expired")
+      expect(engine.state.reservations.first.status).to eq("approved")
+      expect(engine.status_checker.tasks.first).to have_attributes(status: "resolved", last_result: "approved")
+      expect(providers.fetch("vipay")).to have_attributes(in_progress_count: 0, daily_reserved_amount: 0)
+    end
+
+    it "rolls back a late refusal without starting fallback", :aggregate_failures do
+      providers = two_primary_pool
+      client = status_client(call_results: %w[expired], status_results: %w[cancelled])
+      policy = Routing::Policy.new(
+        "status_check" => status_check_config,
+        "strategies" => { "cascade_priority" => { "enabled" => true, "weight" => 1.0 } }
+      )
+
+      engine = described_class.new([build_operation], providers, policy, client)
+      decision = engine.call.first
+
+      expect(decision.attempts.count { |attempt| attempt.decision == "selected" }).to eq(1)
+      expect(decision.selected_provider).to eq("vipay")
+      expect(engine.state.reservations.first.status).to eq("rejected")
+      expect(providers.fetch("vipay")).to have_attributes(
+        in_progress_count: 0, in_progress_amount: 0, daily_reserved_amount: 0
+      )
+    end
+
     it "records eligible providers that lost the soft-score comparison" do
       decision = described_class.call(
         operations: [build_operation],

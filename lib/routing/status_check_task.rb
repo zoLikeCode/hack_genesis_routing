@@ -30,6 +30,10 @@ module Routing
       status == "scheduled" && next_check_at <= now
     end
 
+    def scheduled?
+      status == "scheduled"
+    end
+
     def start!
       transition!("checking", from: "scheduled")
       @attempts += 1
