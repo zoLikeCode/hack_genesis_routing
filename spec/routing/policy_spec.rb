@@ -5,7 +5,7 @@ RSpec.describe Routing::Policy do
     subject(:policy) { described_class.load(File.join(SPEC_ROOT, "config/routing_policy.yml")) }
 
     it "reads count_share weight from routing_policy.yml" do
-      expect(policy.weight_for("count_share")).to eq(0.30)
+      expect(policy.weight_for("count_share")).to eq(0.25)
     end
 
     it "reads financial_obligation weight from routing_policy.yml" do
@@ -21,15 +21,24 @@ RSpec.describe Routing::Policy do
     end
 
     it "selects a profile for each configured provider", :aggregate_failures do
-      expect(policy.profile_for("vipay")).to eq("reliable")
-      expect(policy.profile_for("payflow")).to eq("obligation")
-      expect(policy.profile_for("quickpay")).to eq("capacity")
+      expect(policy.profile_for("vipay")).to eq("reliable_history")
+      expect(policy.profile_for("payflow")).to eq("controlled_share")
+      expect(policy.profile_for("quickpay")).to eq("capacity_obligation")
     end
 
     it "uses provider-specific strategy weights", :aggregate_failures do
-      expect(policy.weight_for("conversion", provider: "vipay")).to eq(0.45)
-      expect(policy.weight_for("financial_obligation", provider: "payflow")).to eq(0.40)
-      expect(policy.weight_for("amount_band", provider: "quickpay")).to eq(0.25)
+      expect(policy.weight_for("historical_quality", provider: "vipay")).to eq(0.35)
+      expect(policy.weight_for("volume_share", provider: "payflow")).to eq(0.45)
+      expect(policy.weight_for("financial_obligation", provider: "quickpay")).to eq(0.30)
+    end
+
+    it "normalizes each configured provider profile to one" do
+      totals = %w[vipay payflow quickpay].to_h do |provider|
+        total = Routing::SoftGoals::GOALS.sum { |goal| policy.weight_for(goal::KEY, provider: provider) }
+        [provider, total]
+      end
+
+      expect(totals.values).to all(be_within(0.0001).of(1.0))
     end
 
     it "reads simulation_seed from routing_policy.yml" do

@@ -20,6 +20,13 @@ RSpec.describe Routing::SoftGoals::Snapshot do
     it "seeds payflow volume from daily_approved_amount" do
       expect(snapshot.volume_share_pct("payflow")).to be_within(0.01).of(47.54)
     end
+
+    it "carries an optional history model" do
+      history = Routing::History.load(File.join(SPEC_ROOT, "data/operations_history.csv"))
+      snapshot = described_class.from_providers([vipay, payflow], history: history)
+
+      expect(snapshot.history).to equal(history)
+    end
   end
 
   describe "#record_selection!" do

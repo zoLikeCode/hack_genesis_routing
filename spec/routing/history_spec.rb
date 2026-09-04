@@ -26,6 +26,46 @@ RSpec.describe Routing::History do
       expect(history["vipay"].fetch("avg_latency_sec")).to be_positive
     end
 
+    it "builds bank-aware quality from rows that precede the operation", :aggregate_failures do
+      quality = history.quality(provider: public_provider("vipay"), operation: build_operation(bank: "sberbank"))
+
+      expect(quality).to have_attributes(scope: "bank", sample_size: 8)
+      expect(quality.score).to be_between(-1, 1)
+      expect(quality.approval_rate).to be_between(0, 1)
+      expect(quality.timeout_rate).to be_between(0, 1)
+    end
+
+    it "uses the live conversion as a prior when a provider has no history", :aggregate_failures do
+      provider = build_provider(payment_system: "newpay", conversion_24h: 0.80)
+      quality = history.quality(provider: provider, operation: build_operation)
+
+      expect(quality).to have_attributes(scope: "live_prior", sample_size: 0, approval_rate: 0.80)
+      expect(quality.score).to be_between(-1, 1)
+    end
+
+    it "does not use observations from the operation future" do
+      observations = [
+        observation(id_time: "2026-07-30T09:00:00+03:00", status: "rejected"),
+        observation(id_time: "2026-07-30T10:00:00+03:00", status: "approved")
+      ]
+      local_history = described_class.new({}, observations: observations)
+
+      quality = local_history.quality(provider: build_provider, operation: build_operation)
+
+      expect(quality.sample_size).to eq(1)
+    end
+
+    it "ignores rows that violate the provider current bank rules" do
+      local_history = described_class.new(
+        {},
+        observations: [observation(id_time: "2026-07-30T09:00:00+03:00", status: "approved", bank: "alfa")]
+      )
+
+      quality = local_history.quality(provider: build_provider, operation: build_operation)
+
+      expect(quality).to have_attributes(scope: "live_prior", sample_size: 0)
+    end
+
     it "raises InvalidInputError when the file is missing" do
       expect { described_class.load("missing.csv") }.to raise_error(Routing::InvalidInputError)
     end
@@ -38,6 +78,21 @@ RSpec.describe Routing::History do
       path = File.join(Dir.mktmpdir, "bad.csv")
       File.write(path, "operation_id,amount,payment_system,status,latency_sec\nop_1,not-a-number,vipay,approved,1\n")
       path
+    end
+
+    def public_provider(name)
+      Routing::ProviderPool.load(File.join(SPEC_ROOT, "data/providers.json")).fetch(name)
+    end
+
+    def observation(id_time:, status:, bank: "sberbank")
+      Routing::History::Observation.new(
+        provider_name: "vipay",
+        created_at: Time.iso8601(id_time),
+        amount: 15_000,
+        bank: bank,
+        status: status,
+        latency_sec: 30
+      )
     end
   end
 end

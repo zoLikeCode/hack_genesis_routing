@@ -3,9 +3,9 @@
 module Routing
   module SoftGoals
     class Snapshot
-      attr_reader :version
+      attr_reader :version, :history
 
-      def self.from_providers(providers, counts: nil, version: 0, readonly: false)
+      def self.from_providers(providers, counts: nil, history: nil, version: 0, readonly: false)
         Routing.assert(providers.respond_to?(:each), "providers must be enumerable")
         providers = providers.to_a
         volumes, count_targets, volume_targets = provider_totals(providers)
@@ -13,7 +13,7 @@ module Routing
         providers.each { |provider| session_counts[provider.name] ||= 0 }
         snapshot = new(
           counts: session_counts, volumes: volumes, count_targets: count_targets,
-          volume_targets: volume_targets, version: version
+          volume_targets: volume_targets, history: history, version: version
         )
         snapshot.send(:make_readonly!) if readonly
         snapshot
@@ -34,12 +34,16 @@ module Routing
       end
       private_class_method :provider_totals
 
-      def initialize(counts: {}, volumes: {}, count_targets: {}, volume_targets: {}, version: 0)
+      def initialize(counts: {}, volumes: {}, count_targets: {}, volume_targets: {}, **options)
+        history = options.fetch(:history, nil)
+        version = options.fetch(:version, 0)
         Routing.assert(version.is_a?(Integer) && version >= 0, "snapshot version must be non-negative")
+        Routing.assert(history.nil? || history.is_a?(History), "snapshot history must be Routing::History")
         @counts = normalize_totals(counts, "counts")
         @volumes = normalize_totals(volumes, "volumes")
         @count_targets = normalize_totals(count_targets, "count_targets")
         @volume_targets = normalize_totals(volume_targets, "volume_targets")
+        @history = history
         @version = version
         @readonly = false
       end

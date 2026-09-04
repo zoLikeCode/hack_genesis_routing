@@ -38,11 +38,13 @@ module Routing
       end
     end
 
-    attr_reader :providers
+    attr_reader :providers, :history
 
-    def initialize(providers)
+    def initialize(providers, history: nil)
       Routing.assert(providers.is_a?(ProviderPool), "providers must be a ProviderPool")
+      Routing.assert(history.nil? || history.is_a?(History), "runtime history must be Routing::History")
       @providers = providers
+      @history = history
       @committed_counts = Hash.new(0)
       @pending_counts = Hash.new(0)
       @reservations = {}
@@ -57,6 +59,7 @@ module Routing
         soft_goals = SoftGoals::Snapshot.from_providers(
           provider_views,
           counts: counts,
+          history: history,
           version: @revision,
           readonly: true
         )

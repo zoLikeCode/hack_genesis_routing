@@ -43,7 +43,14 @@ Enable YJIT in the CLI via `RUBY_YJIT_ENABLE=1` (already defaulted in `bin/route
 
 Each profile contains its own strategy combination and weights. Strategies listed inside a profile are enabled automatically.
 The application rejects unknown profiles and any attempt to mix profiles with directly enabled strategies. The supplied policy
-uses provider-specific profiles calibrated from the provider rules and the historical conversion/latency baseline.
+uses history-calibrated provider profiles: `reliable_history` for `vipay`, `controlled_share` for `payflow`, and
+`capacity_obligation` for `quickpay`. The `historical_only` profile demonstrates the single-strategy mode.
+
+`historical_quality` combines smoothed approval probability, timeout risk, and p90 latency. It first looks for a sufficiently
+large provider + bank + amount segment, then falls back through bank, amount, and provider-level samples. Small segments are
+shrunk toward the provider baseline, while `conversion_24h` acts as the live prior. Only history rows older than the current
+operation and compatible with the provider's current bank and amount rules are eligible, so the strategy neither looks ahead
+nor revives traffic that current hard constraints would reject.
 
 `Routing::Router` always applies every hard constraint before ranking. The eligible fallback is kept outside soft-goal
 ranking and is selected only when no untried external provider remains.

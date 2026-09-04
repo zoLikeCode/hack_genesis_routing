@@ -8,6 +8,7 @@ module Routing
       VOLUME_SHARE_DEFICIT = "volume_share_deficit"
       VOLUME_SHARE_OVER_TARGET = "volume_share_over_target"
       HIGHER_CONVERSION = "higher_conversion"
+      HISTORICAL_QUALITY = "historical_quality"
       CASCADE_PRIORITY = "cascade_priority"
       AMOUNT_BAND_FIT = "amount_band_fit"
       AVAILABLE_CAPACITY = "available_capacity"

@@ -6,6 +6,7 @@ module Routing
       CountShare,
       VolumeShare,
       Conversion,
+      HistoricalQuality,
       CascadePriority,
       AmountBand,
       FinancialObligation,

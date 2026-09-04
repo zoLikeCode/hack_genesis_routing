@@ -16,9 +16,9 @@ hard_constraints:
 active_profile: balanced
 
 provider_profiles:
-  vipay: reliable
-  payflow: obligation
-  quickpay: capacity
+  vipay: reliable_history
+  payflow: controlled_share
+  quickpay: capacity_obligation
 
 strategies:
   count_share:
@@ -30,6 +30,9 @@ strategies:
   conversion:
     enabled: false
     weight: 0.20
+  historical_quality:
+    enabled: false
+    weight: 0.30
   cascade_priority:
     enabled: false
     weight: 0.10
@@ -47,19 +50,25 @@ profiles:
   balanced:
     strategies:
       count_share:
-        weight: 0.30
+        weight: 0.25
       volume_share:
-        weight: 0.20
+        weight: 0.15
       conversion:
+        weight: 0.15
+      historical_quality:
         weight: 0.20
       cascade_priority:
         weight: 0.10
       amount_band:
-        weight: 0.10
+        weight: 0.05
       financial_obligation:
         weight: 0.05
       load_balance:
         weight: 0.05
+  historical_only:
+    strategies:
+      historical_quality:
+        weight: 1.0
   conversion_first:
     strategies:
       conversion:
@@ -74,39 +83,45 @@ profiles:
     strategies:
       cascade_priority:
         weight: 1.0
-  reliable:
+  reliable_history:
     strategies:
+      historical_quality:
+        weight: 0.35
       conversion:
-        weight: 0.45
-      count_share:
         weight: 0.25
+      count_share:
+        weight: 0.10
       volume_share:
+        weight: 0.15
+      load_balance:
+        weight: 0.10
+      financial_obligation:
+        weight: 0.05
+  controlled_share:
+    strategies:
+      volume_share:
+        weight: 0.45
+      historical_quality:
+        weight: 0.30
+      conversion:
+        weight: 0.05
+      count_share:
+        weight: 0.05
+      load_balance:
         weight: 0.10
       cascade_priority:
         weight: 0.05
-      load_balance:
-        weight: 0.15
-  obligation:
+  capacity_obligation:
     strategies:
       financial_obligation:
-        weight: 0.40
-      count_share:
-        weight: 0.20
-      volume_share:
-        weight: 0.15
-      conversion:
-        weight: 0.10
-      load_balance:
-        weight: 0.15
-  capacity:
-    strategies:
-      load_balance:
         weight: 0.30
-      amount_band:
+      historical_quality:
         weight: 0.25
-      volume_share:
+      load_balance:
         weight: 0.20
-      count_share:
+      volume_share:
         weight: 0.15
+      count_share:
+        weight: 0.05
       conversion:
-        weight: 0.10
+        weight: 0.05
