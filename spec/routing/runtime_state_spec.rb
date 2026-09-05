@@ -111,27 +111,25 @@ RSpec.describe Routing::RuntimeState do
     state.resolve_timeout!(operation_id: operation.id, provider_name: provider.name, result: "approved")
 
     row = state.metrics.observations_for("vipay").first
-    expect(row).to have_attributes(status: "approved", latency_sec: nil)
+    expect(row).to have_attributes(initial_status: "expired", status: "approved", latency_sec: 40)
   end
 
-  it "restores a trimmed timeout when status-check settles", :aggregate_failures do
-    tight = described_class.new(
-      pool,
-      metrics_config: { "window" => { "max_observations" => 1, "recent_observations" => 1 } }
-    )
-    reservation = tight.try_reserve!(provider, operation, expected_revision: tight.snapshot.revision).reservation
-    tight.mark_timeout!(reservation)
-    tight.record_metric!(operation: operation, provider_name: "vipay", status: "expired", latency_sec: 40)
-    tight.record_metric!(
-      operation: build_operation(operation_id: "op_other"),
-      provider_name: "vipay",
-      status: "expired",
-      latency_sec: 40
-    )
-    tight.resolve_timeout!(operation_id: operation.id, provider_name: provider.name, result: "approved")
+  it "keeps an unknown observed latency as nil" do
+    state.record_metric!(operation: operation, provider_name: "vipay", status: "rejected", latency_sec: nil)
 
-    restored = tight.metrics.observations_for("vipay").find { |row| row.operation_id == operation.id }
-    expect(restored).to have_attributes(status: "approved", latency_sec: nil)
+    expect(state.metrics.observations_for("vipay").first.latency_sec).to be_nil
+  end
+
+  it "records and settles a normal provider outcome atomically", :aggregate_failures do
+    reservation = reserve
+    state.record_outcome!(
+      reservation: reservation, operation: operation, status: "approved", latency_sec: 12
+    )
+
+    expect(reservation.status).to eq("approved")
+    expect(state.metrics.observations_for("vipay").first).to have_attributes(
+      initial_status: "approved", status: "approved", latency_sec: 12
+    )
   end
 
   it "rechecks hard constraints inside the reservation boundary", :aggregate_failures do

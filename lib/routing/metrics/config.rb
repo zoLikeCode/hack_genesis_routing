@@ -46,12 +46,8 @@ module Routing
         window.fetch("max_observations")
       end
 
-      def recent_observations
-        window.fetch("recent_observations")
-      end
-
-      def combination
-        @data.fetch("combination")
+      def lookback_seconds
+        window.fetch("lookback_hours") * 60 * 60
       end
 
       def window
@@ -62,57 +58,20 @@ module Routing
         @data.fetch("smoothing")
       end
 
-      def components
-        @data.fetch("components")
-      end
-
-      def health
-        @data.fetch("multipliers").fetch("health")
-      end
-
-      def health_enabled?
-        health.fetch("enabled")
-      end
-
-      def component_enabled?(name)
-        entry = components[name]
-        !entry.nil? && entry.fetch("enabled")
-      end
-
-      def normalized_component_weights
-        enabled = components.select { |_name, entry| entry.fetch("enabled") }
-        total = enabled.values.sum { |entry| entry.fetch("weight").to_f }
-        return {} if total.zero?
-
-        enabled.to_h { |name, entry| [name, entry.fetch("weight").to_f / total] }
-      end
-
-      def bad_p90_sec
-        components.fetch("latency").fetch("bad_p90_sec")
-      end
-
       def prior_strength
         smoothing.fetch("prior_strength")
       end
 
-      def approval_prior
-        smoothing.fetch("approval_prior")
-      end
-
-      def timeout_prior
-        smoothing.fetch("timeout_prior")
-      end
-
-      def timeout_prior_strength
-        smoothing.fetch("timeout_prior_strength")
+      def default_conversion_prior
+        smoothing.fetch("default_conversion_prior")
       end
 
       def segment_min_size
         smoothing.fetch("segment_min_size")
       end
 
-      def segment_confidence_strength
-        smoothing.fetch("segment_confidence_strength")
+      def segment_prior_strength
+        smoothing.fetch("segment_prior_strength")
       end
     end
   end

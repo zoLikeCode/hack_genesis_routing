@@ -5,9 +5,9 @@ module Routing
     class Window
       attr_reader :max_observations
 
-      def initialize(max_observations:, observations: [])
-        Routing.assert(max_observations.is_a?(Integer) && max_observations.positive?,
-                       "window max_observations must be a positive integer")
+      def initialize(max_observations: nil, observations: [])
+        Routing.assert(max_observations.nil? || (max_observations.is_a?(Integer) && max_observations.positive?),
+                       "window max_observations must be nil or a positive integer")
         Routing.assert(observations.is_a?(Array) && observations.all?(History::Observation),
                        "window observations must be Observation objects")
         @max_observations = max_observations
@@ -27,18 +27,14 @@ module Routing
         self
       end
 
-      def rewrite_status(operation_id:, status:, latency_sec: :clear)
+      def rewrite_status(operation_id:, status:)
         ensure_mutable!
         Routing.assert(operation_id.is_a?(String) && !operation_id.empty?, "operation_id required")
         Routing.assert(History::STATUSES.include?(status), "unknown metric status #{status}")
         found = @index[operation_id]
         return if found.nil?
 
-        next_latency = latency_sec == :clear ? nil : latency_sec
-        unless next_latency.nil?
-          Routing.assert(next_latency.is_a?(Numeric) && next_latency >= 0, "latency_sec must be non-negative")
-        end
-        replace(found, found.with(status: status, latency_sec: next_latency))
+        replace(found, found.with(status: status))
         @index[operation_id]
       end
 
@@ -73,10 +69,10 @@ module Routing
       end
 
       def trim!
+        return if @max_observations.nil?
+
         while @observations.size > @max_observations
-          droppable = @observations[0...-1]
-          drop_index = droppable.index { |row| row.status != "expired" } || 0
-          dropped = @observations.delete_at(drop_index)
+          dropped = @observations.shift
           @index.delete(dropped.operation_id)
         end
       end

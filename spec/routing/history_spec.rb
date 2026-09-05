@@ -26,21 +26,27 @@ RSpec.describe Routing::History do
       expect(history["vipay"].fetch("avg_latency_sec")).to be_positive
     end
 
-    it "builds bank-aware quality from rows that precede the operation", :aggregate_failures do
-      quality = history.quality(provider: public_provider("vipay"), operation: build_operation(bank: "sberbank"))
+    it "keeps unknown latency as nil and excludes it from the average", :aggregate_failures do
+      local_history = described_class.load(history_with_unknown_latency_path)
 
-      expect(quality).to have_attributes(scope: "bank", sample_size: 8)
-      expect(quality.score).to be_between(-1, 1)
-      expect(quality.approval_rate).to be_between(0, 1)
-      expect(quality.timeout_rate).to be_between(0, 1)
+      expect(local_history.observations.first.latency_sec).to be_nil
+      expect(local_history["vipay"].fetch("avg_latency_sec")).to eq(20.0)
     end
 
-    it "uses a neutral approval prior when a provider has no history", :aggregate_failures do
+    it "builds a bounded conversion estimate from preceding rows", :aggregate_failures do
+      quality = history.quality(provider: public_provider("vipay"), operation: build_operation(bank: "sberbank"))
+
+      expect(quality).to have_attributes(scope: "provider", sample_size: 12)
+      expect(quality.score).to be_between(0, 1)
+      expect(quality.initial_approval_rate).to be_between(0, 1)
+      expect(quality.initial_timeout_rate).to be_between(0, 1)
+    end
+
+    it "uses the provider prior when a provider has no history", :aggregate_failures do
       provider = build_provider(payment_system: "newpay", conversion_24h: 0.80)
       quality = history.quality(provider: provider, operation: build_operation)
 
-      expect(quality).to have_attributes(scope: "live_prior", sample_size: 0, approval_rate: 0.5)
-      expect(quality.score).to be_between(-1, 1)
+      expect(quality).to have_attributes(scope: "prior", sample_size: 0, score: 0.8)
     end
 
     it "does not use observations from the operation future" do
@@ -63,7 +69,7 @@ RSpec.describe Routing::History do
 
       quality = local_history.quality(provider: build_provider, operation: build_operation)
 
-      expect(quality).to have_attributes(scope: "live_prior", sample_size: 0)
+      expect(quality).to have_attributes(scope: "prior", sample_size: 0)
     end
 
     it "raises InvalidInputError when the file is missing" do
@@ -80,6 +86,16 @@ RSpec.describe Routing::History do
       path
     end
 
+    def history_with_unknown_latency_path
+      path = File.join(Dir.mktmpdir, "unknown-latency.csv")
+      File.write(path, <<~CSV)
+        operation_id,amount,payment_system,status,latency_sec,created_at,bank
+        op_1,1000,vipay,approved,,2026-07-30T09:00:00+03:00,sberbank
+        op_2,1000,vipay,rejected,20,2026-07-30T09:01:00+03:00,sberbank
+      CSV
+      path
+    end
+
     def public_provider(name)
       Routing::ProviderPool.load(File.join(SPEC_ROOT, "data/providers.json")).fetch(name)
     end
@@ -91,6 +107,7 @@ RSpec.describe Routing::History do
         created_at: Time.iso8601(id_time),
         amount: 15_000,
         bank: bank,
+        initial_status: status,
         status: status,
         latency_sec: 30
       )

@@ -5,7 +5,10 @@ require "time"
 
 module Routing
   class History
-    Observation = Data.define(:operation_id, :provider_name, :created_at, :amount, :bank, :status, :latency_sec)
+    Observation = Data.define(
+      :operation_id, :provider_name, :created_at, :amount, :bank,
+      :initial_status, :status, :latency_sec
+    )
 
     STATUSES = %w[approved rejected expired].freeze
 
@@ -37,14 +40,16 @@ module Routing
       @by_name.fetch(name, []).freeze
     end
 
-    def quality(provider:, operation:, config: nil)
-      HistoricalQualityModel.call(
+    def conversion_estimate(provider:, operation:, config: nil)
+      Metrics::Catalog.call(
         observations: observations_for(provider.name),
         provider: provider,
         operation: operation,
         config: config
       )
     end
+
+    alias quality conversion_estimate
 
     def self.read(path)
       CSV.read(path, headers: true)
@@ -69,8 +74,9 @@ module Routing
         created_at: timestamp(row["created_at"]),
         amount: number(row["amount"], "amount"),
         bank: row["bank"],
+        initial_status: status,
         status: status,
-        latency_sec: number(row["latency_sec"], "latency_sec")
+        latency_sec: optional_number(row["latency_sec"], "latency_sec")
       )
     end
     private_class_method :observation_from
@@ -90,15 +96,15 @@ module Routing
 
     def self.empty_totals
       { "count" => 0, "approved_count" => 0, "attempted_volume" => 0, "approved_volume" => 0,
-        "latency_sum" => 0 }
+        "latency_sum" => 0, "latency_count" => 0 }
     end
     private_class_method :empty_totals
 
     def self.record(totals, observation)
       totals["count"] += 1
       totals["attempted_volume"] += observation.amount
-      totals["latency_sum"] += observation.latency_sec
-      return unless observation.status == "approved"
+      record_latency(totals, observation.latency_sec)
+      return unless observation.initial_status == "approved"
 
       totals["approved_count"] += 1
       totals["approved_volume"] += observation.amount
@@ -113,7 +119,7 @@ module Routing
         "volume" => totals.fetch("approved_volume"),
         "attempted_volume" => totals.fetch("attempted_volume"),
         "conversion" => count.zero? ? 0.0 : totals.fetch("approved_count").to_f / count,
-        "avg_latency_sec" => count.zero? ? 0.0 : totals.fetch("latency_sum").to_f / count
+        "avg_latency_sec" => average_latency(totals)
       }
     end
     private_class_method :finalize
@@ -133,6 +139,29 @@ module Routing
       raise InvalidInputError, "invalid #{field}: #{value}"
     end
     private_class_method :number
+
+    def self.optional_number(value, field)
+      return if value.nil? || value.empty?
+
+      number(value, field)
+    end
+    private_class_method :optional_number
+
+    def self.record_latency(totals, latency)
+      return if latency.nil?
+
+      totals["latency_sum"] += latency
+      totals["latency_count"] += 1
+    end
+    private_class_method :record_latency
+
+    def self.average_latency(totals)
+      count = totals.fetch("latency_count")
+      return if count.zero?
+
+      totals.fetch("latency_sum").to_f / count
+    end
+    private_class_method :average_latency
 
     def self.input_error!(message)
       raise InvalidInputError, message

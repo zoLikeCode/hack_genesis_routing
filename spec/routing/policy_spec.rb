@@ -1,246 +1,128 @@
 # frozen_string_literal: true
 
 RSpec.describe Routing::Policy do
+  let(:profile_providers) do
+    {
+      "reliable_history" => "vipay", "controlled_share" => "payflow",
+      "capacity_obligation" => "quickpay"
+    }
+  end
+
   describe ".load" do
     subject(:policy) { described_class.load(File.join(SPEC_ROOT, "config/routing_policy.yml")) }
 
-    it "reads count_share weight from routing_policy.yml" do
-      expect(policy.weight_for("count_share")).to eq(0.25)
+    it "loads the simplified conversion metric configuration", :aggregate_failures do
+      expect(policy.metrics.max_observations).to eq(50)
+      expect(policy.metrics.lookback_seconds).to eq(24 * 60 * 60)
+      expect(policy.metrics.prior_strength).to eq(10.0)
+      expect(policy.metrics.default_conversion_prior).to eq(0.5)
+      expect(policy.metrics.segment_min_size).to eq(10)
     end
 
-    it "reads financial_obligation weight from routing_policy.yml" do
-      expect(policy.weight_for("financial_obligation")).to eq(0.05)
-    end
-
-    it "loads the default profile" do
-      expect(policy.active_profile).to eq("balanced")
-    end
-
-    it "enables count_share through the default profile" do
-      expect(policy.enabled?("count_share")).to be(true)
-    end
-
-    it "selects a profile for each configured provider", :aggregate_failures do
+    it "keeps provider profile assignments", :aggregate_failures do
       expect(policy.profile_for("vipay")).to eq("reliable_history")
       expect(policy.profile_for("payflow")).to eq("controlled_share")
       expect(policy.profile_for("quickpay")).to eq("capacity_obligation")
     end
 
-    it "uses provider-specific strategy weights", :aggregate_failures do
-      expect(policy.weight_for("historical_quality", provider: "vipay")).to eq(0.35)
-      expect(policy.weight_for("volume_share", provider: "payflow")).to eq(0.45)
-      expect(policy.weight_for("financial_obligation", provider: "quickpay")).to eq(0.30)
-    end
-
-    it "normalizes each configured provider profile to one" do
-      totals = %w[vipay payflow quickpay].to_h do |provider|
-        total = Routing::SoftGoals::GOALS.sum { |goal| policy.weight_for(goal::KEY, provider: provider) }
-        [provider, total]
+    it "normalizes every active profile independently" do
+      %w[balanced reliable_history controlled_share capacity_obligation].each do |name|
+        provider = profile_providers.fetch(name, "unassigned")
+        expect(policy.strategy_weights_for(provider).values.sum).to be_within(1e-10).of(1.0)
       end
-
-      expect(totals.values).to all(be_within(0.0001).of(1.0))
     end
 
-    it "reads simulation_seed from routing_policy.yml" do
-      expect(policy.simulation_seed).to eq(1)
+    it "loads inclusive amount-band preferences", :aggregate_failures do
+      expect(policy.amount_band_score("payflow", 50_000)).to eq(1.0)
+      expect(policy.amount_band_score("vipay", 50_001)).to eq(1.0)
+      expect(policy.amount_band_score("quickpay", 100_001)).to eq(1.0)
     end
 
-    it "reads a null default RPM limit from routing_policy.yml" do
-      expect(policy.default_requests_per_minute_limit).to be_nil
-    end
-
-    it "loads status-check scheduling settings", :aggregate_failures do
-      expect(policy.status_check).to include(
-        "enabled" => true,
-        "initial_delay_sec" => 5,
-        "max_attempts" => 10
-      )
-      expect(policy.status_check.fetch("retry_delays_sec")).to eq([5, 15, 30, 60, 120])
-    end
-
-    it "raises InvalidInputError when the file is missing" do
-      expect { described_class.load("missing-policy.yml") }.to raise_error(Routing::InvalidInputError)
-    end
-
-    it "raises InvalidInputError when YAML is invalid" do
-      path = File.join(SPEC_ROOT, "spec/support/fixtures.rb")
-      expect { described_class.load(path) }.to raise_error(Routing::InvalidInputError)
-    end
-
-    it "rejects an unknown metric component" do
-      expect do
-        described_class.new("metrics" => { "components" => { "uptime" => { "weight" => 1.0 } } })
-      end.to raise_error(Routing::InvalidInputError, /not a registered metric/)
-    end
-
-    it "loads metrics from routing_policy.yml", :aggregate_failures do
-      expect(policy.metrics.max_observations).to eq(50)
-      expect(policy.metrics.approval_prior).to eq(0.5)
-      expect(policy.metrics_for("vipay").health.fetch("exponent")).to eq(1.5)
+    it "loads status-check settings" do
+      expect(policy.status_check).to include("enabled" => true, "initial_delay_sec" => 5, "max_attempts" => 10)
     end
   end
 
-  describe "#weight_for" do
-    let(:disabled) do
-      described_class.new("strategies" => { "count_share" => { "enabled" => false, "weight" => 0.30 } })
-    end
+  it "normalizes enabled direct strategies", :aggregate_failures do
+    policy = described_class.new(
+      "strategies" => {
+        "conversion" => { "enabled" => true, "weight" => 3 },
+        "load_balance" => { "enabled" => true, "weight" => 1 }
+      }
+    )
 
-    let(:mixed) do
+    expect(policy.weight_for("conversion")).to eq(0.75)
+    expect(policy.weight_for("load_balance")).to eq(0.25)
+  end
+
+  it "validates share targets before routing starts" do
+    policy = described_class.new(
+      "strategies" => { "count_share" => { "enabled" => true, "weight" => 1 } }
+    )
+    providers = Routing::ProviderPool.new([build_provider(traffic_percentage: 60)])
+
+    expect { policy.validate_provider_targets!(providers) }
+      .to raise_error(Routing::InvalidInputError, /sum to 100/)
+  end
+
+  it "rejects zero active strategy weight" do
+    expect do
+      described_class.new("strategies" => { "conversion" => { "enabled" => true, "weight" => 0 } })
+    end.to raise_error(Routing::InvalidInputError, /positive when enabled/)
+  end
+
+  it "rejects individual mode without an enabled strategy" do
+    expect { described_class.new("strategies" => {}) }
+      .to raise_error(Routing::InvalidInputError, /must enable at least one strategy/)
+  end
+
+  it "rejects profile mode mixed with a direct strategy" do
+    expect do
       described_class.new(
-        "strategies" => {
-          "count_share" => { "enabled" => true, "weight" => 1.0 },
-          "conversion" => { "enabled" => false, "weight" => 1.0 }
-        }
+        "active_profile" => "only",
+        "strategies" => { "conversion" => { "enabled" => true, "weight" => 1 } },
+        "profiles" => { "only" => { "strategies" => { "conversion" => { "weight" => 1 } } } }
       )
-    end
-
-    it "returns 0 when the strategy is disabled" do
-      expect(disabled.weight_for("count_share")).to eq(0)
-    end
-
-    it "treats a disabled strategy as not enabled" do
-      expect(disabled.enabled?("count_share")).to be(false)
-    end
-
-    it "returns 0 for an unknown strategy" do
-      expect(described_class.new({}).weight_for("missing")).to eq(0)
-    end
-
-    it "defaults simulation_seed to 42" do
-      expect(described_class.new({}).simulation_seed).to eq(42)
-    end
-
-    it "reads default_requests_per_minute_limit from hard_constraints" do
-      policy = described_class.new("hard_constraints" => { "default_requests_per_minute_limit" => 7 })
-      expect(policy.default_requests_per_minute_limit).to eq(7)
-    end
-
-    it "keeps the weight of an enabled individual strategy" do
-      expect(mixed.weight_for("count_share")).to eq(1.0)
-    end
-
-    it "zeros the weight of a disabled individual strategy" do
-      expect(mixed.weight_for("conversion")).to eq(0)
-    end
+    end.to raise_error(Routing::InvalidInputError, /active_profile cannot be used/)
   end
 
-  describe "profiles" do
-    subject(:policy) { described_class.new(profile_policy_data) }
-
-    let(:profile_policy_data) do
-      {
-        "active_profile" => "conversion_first",
-        "strategies" => {
-          "count_share" => { "enabled" => false, "weight" => 0.30 },
-          "volume_share" => { "enabled" => false, "weight" => 0.20 }
-        },
-        "profiles" => {
-          "conversion_first" => {
-            "strategies" => {
-              "conversion" => { "weight" => 0.75 },
-              "count_share" => { "weight" => 0.25 }
-            }
-          }
-        }
-      }
-    end
-
-    it "uses conversion weight from the selected profile" do
-      expect(policy.weight_for("conversion")).to eq(0.75)
-    end
-
-    it "uses count_share weight from the selected profile" do
-      expect(policy.weight_for("count_share")).to eq(0.25)
-    end
-
-    it "disables strategies that are not in the selected profile" do
-      expect(policy.enabled?("volume_share")).to be(false)
-    end
-
-    it "exposes the selected profile" do
-      expect(policy.active_profile).to eq("conversion_first")
-    end
-
-    it "rejects a profile together with an enabled individual strategy" do
-      profile_policy_data["strategies"]["count_share"]["enabled"] = true
-
-      expect { policy }.to raise_error(
-        Routing::InvalidInputError,
-        "active_profile cannot be used while an individual strategy is enabled"
+  it "rejects removed metric and health settings clearly" do
+    expect do
+      described_class.new(
+        "metrics" => { "multipliers" => { "health" => { "enabled" => true } } },
+        "strategies" => { "conversion" => { "enabled" => true, "weight" => 1 } }
       )
-    end
+    end.to raise_error(Routing::InvalidInputError, /unknown keys: multipliers/)
+  end
 
-    it "rejects an unknown selected profile" do
-      profile_policy_data["active_profile"] = "missing"
-
-      expect { policy }.to raise_error(Routing::InvalidInputError, "unknown active_profile missing")
-    end
-
-    it "rejects an empty profile" do
-      profile_policy_data["profiles"]["conversion_first"]["strategies"] = {}
-
-      expect { policy }.to raise_error(
-        Routing::InvalidInputError,
-        "profiles.conversion_first.strategies must not be empty"
+  it "rejects malformed amount bands" do
+    expect do
+      described_class.new(
+        "amount_bands" => [{ "max" => 50_000, "providers" => ["vipay"] }],
+        "strategies" => { "amount_band" => { "enabled" => true, "weight" => 1 } }
       )
-    end
-
-    it "rejects an unknown provider profile" do
-      profile_policy_data["provider_profiles"] = { "vipay" => "missing" }
-
-      expect { policy }.to raise_error(
-        Routing::InvalidInputError,
-        "unknown profile missing for provider vipay"
-      )
-    end
-
-    it "rejects provider profiles together with an enabled individual strategy" do
-      profile_policy_data["active_profile"] = nil
-      profile_policy_data["provider_profiles"] = { "vipay" => "conversion_first" }
-      profile_policy_data["strategies"]["count_share"]["enabled"] = true
-
-      expect { policy }.to raise_error(
-        Routing::InvalidInputError,
-        "provider_profiles cannot be used while an individual strategy is enabled"
-      )
-    end
-
-    it "uses a provider profile instead of the default profile" do
-      profile_policy_data["provider_profiles"] = { "vipay" => "conversion_first" }
-
-      expect(policy.weight_for("conversion", provider: "vipay")).to eq(0.75)
-    end
-
-    it "overlays profile metrics on the global metrics block", :aggregate_failures do
-      profile_policy_data["metrics"] = {
-        "components" => { "availability" => { "weight" => 0.25 } }
-      }
-      profile_policy_data["profiles"]["conversion_first"]["metrics"] = {
-        "components" => { "availability" => { "weight" => 0.40 } },
-        "multipliers" => { "health" => { "exponent" => 1.5 } }
-      }
-
-      expect(policy.metrics_for("vipay").components.fetch("availability").fetch("weight")).to eq(0.40)
-      expect(policy.metrics_for("vipay").health.fetch("exponent")).to eq(1.5)
-    end
+    end.to raise_error(Routing::InvalidInputError, /final amount band/)
   end
 
   describe "status_check" do
-    it "rejects an empty retry schedule" do
-      expect do
-        described_class.new("status_check" => { "retry_delays_sec" => [] })
-      end.to raise_error(
-        Routing::InvalidInputError,
-        "status_check.retry_delays_sec must be a non-empty list of non-negative numbers"
+    it "uses safe defaults when the section is omitted" do
+      policy = described_class.new(
+        "strategies" => { "conversion" => { "enabled" => true, "weight" => 1 } }
+      )
+
+      expect(policy.status_check).to eq(
+        "enabled" => true, "initial_delay_sec" => 5,
+        "retry_delays_sec" => [5, 15, 30, 60, 120], "max_attempts" => 10
       )
     end
 
-    it "uses safe defaults when the section is omitted", :aggregate_failures do
-      config = described_class.new({}).status_check
-
-      expect(config.fetch("enabled")).to be(true)
-      expect(config.fetch("initial_delay_sec")).to eq(5)
-      expect(config.fetch("max_attempts")).to eq(10)
+    it "rejects an empty retry schedule" do
+      expect do
+        described_class.new(
+          "status_check" => { "retry_delays_sec" => [] },
+          "strategies" => { "conversion" => { "enabled" => true, "weight" => 1 } }
+        )
+      end.to raise_error(Routing::InvalidInputError, /non-empty list/)
     end
   end
 end

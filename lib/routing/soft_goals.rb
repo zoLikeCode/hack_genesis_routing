@@ -2,8 +2,9 @@
 
 module Routing
   module SoftGoals
-    # A strategy combines metrics into one score in [-1, 1]. A profile combines
-    # strategies. Health is also a metric combination, applied after the mix.
+    # A strategy combines metrics into one score in [0, 1]. A profile combines
+    # strategies using normalized positive weights. There are no extra score
+    # multipliers after the profile mix.
     #
     # To add a metric that should affect selection:
     #   1. Register it in Metrics::Inputs
@@ -13,14 +14,13 @@ module Routing
       CountShare,
       VolumeShare,
       Conversion,
-      HistoricalQuality,
       CascadePriority,
       AmountBand,
       FinancialObligation,
       LoadBalance
     ].freeze
 
-    METRIC_STRATEGY_KEY = HistoricalQuality::KEY
+    METRIC_STRATEGY_KEY = Conversion::KEY
 
     def self.metrics_for(goal)
       Array(goal::METRICS)
@@ -28,12 +28,6 @@ module Routing
 
     def self.metric_map
       GOALS.to_h { |goal| [goal::KEY, metrics_for(goal)] }
-    end
-
-    def self.deficit_score(target, actual)
-      return 0.0 if target.nil?
-
-      ((target.to_f - actual.to_f) / 100.0).clamp(-1.0, 1.0)
     end
   end
 end

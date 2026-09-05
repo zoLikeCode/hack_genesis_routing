@@ -19,6 +19,7 @@ module Routing
       @operations = operations
       @providers = providers
       @policy = policy
+      @policy.validate_provider_targets!(@providers)
       apply_default_requests_per_minute_limit!
       @simulator = simulator || Simulator.new(seed: policy.simulation_seed)
       @state = state || RuntimeState.new(providers, metrics_config: policy.metrics, policy: policy)
@@ -83,7 +84,6 @@ module Routing
 
       outcome = simulate_try(selection.provider, operation, reserved.reservation)
       context.add_latency!(outcome.fetch(:latency_sec))
-      record_metric(operation, selection.provider, outcome)
       decision = apply_outcome(operation, selection, context, outcome, reserved.reservation)
       context.mark_attempted!(selection.provider.name) if decision.nil?
       decision
@@ -111,17 +111,17 @@ module Routing
 
     def apply_outcome(operation, selection, context, outcome, reservation)
       result = outcome.fetch(:result)
-      if result == "approved"
-        @state.approve!(reservation)
-        return complete(operation, selection, context, outcome)
-      end
+      @state.record_outcome!(
+        reservation: reservation, operation: operation, status: result,
+        latency_sec: outcome.fetch(:latency_sec)
+      )
+      return complete(operation, selection, context, outcome) if result == "approved"
+
       if result == "expired"
-        @state.mark_timeout!(reservation)
         @status_check_runner.schedule(reservation, timed_out_at: timeout_time(operation, context))
         return complete(operation, selection, context, outcome)
       end
 
-      @state.reject!(reservation)
       return complete(operation, selection, context, outcome) if selection.fallback?
 
       context.add_attempt!(skip_attempt(selection.provider.name, simulation_reason(result), nil))

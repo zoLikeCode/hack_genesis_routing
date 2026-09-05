@@ -8,7 +8,6 @@ module Routing
       VOLUME_SHARE_DEFICIT = "volume_share_deficit"
       VOLUME_SHARE_OVER_TARGET = "volume_share_over_target"
       HIGHER_CONVERSION = "higher_conversion"
-      HISTORICAL_QUALITY = "historical_quality"
       CASCADE_PRIORITY = "cascade_priority"
       AMOUNT_BAND_FIT = "amount_band_fit"
       AVAILABLE_CAPACITY = "available_capacity"
@@ -22,7 +21,6 @@ module Routing
       UNMET_COUNT_SHARE = "unmet_count_share"
       UNMET_VOLUME_SHARE = "unmet_volume_share"
       GOAL_DISAGREEMENT = "goal_disagreement"
-      METRIC_DISAGREEMENT = "metric_disagreement"
     end
   end
 end

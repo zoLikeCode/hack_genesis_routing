@@ -4,7 +4,9 @@ require "rspec/core/rake_task"
 require "rubocop/rake_task"
 
 RSpec::Core::RakeTask.new(:spec)
-RuboCop::RakeTask.new
+RuboCop::RakeTask.new do |task|
+  task.patterns = FileList["lib/**/*.rb", "spec/**/*.rb", "bin/*", "Rakefile"].to_a
+end
 
 desc "Validate routing decisions against the public 10-op queue (default: data/sample_routing_decisions.json)"
 task :validate, [:decisions] do |_t, args|

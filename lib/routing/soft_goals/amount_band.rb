@@ -4,30 +4,18 @@ module Routing
   module SoftGoals
     class AmountBand
       KEY = "amount_band"
-      METRICS = %w[operation.amount catalog.limit_amount_max].freeze
+      METRICS = %w[operation.amount catalog.amount_band_preferences].freeze
 
-      def self.call(provider, operation, _snapshot, _policy = nil)
-        maximum = provider.limit_amount_max
-        return neutral if maximum.nil? || !maximum.positive?
-
-        ratio = (operation.amount.to_f / maximum).clamp(0.0, 1.0)
+      def self.call(provider, operation, _snapshot, policy = nil)
+        Routing.assert(policy.is_a?(Policy), "amount_band requires Policy")
+        score = policy.amount_band_score(provider, operation.amount)
         Contribution.new(
           name: KEY,
-          score: ratio,
+          score: score,
           reason: Reasons::AMOUNT_BAND_FIT,
-          details: "amount #{operation.amount} is #{format_pct(ratio * 100)}% of limit_amount_max #{maximum}"
+          details: "amount #{operation.amount} configured preference score #{score.round(3)}"
         )
       end
-
-      def self.format_pct(value)
-        value.round(2)
-      end
-      private_class_method :format_pct
-
-      def self.neutral
-        Contribution.new(name: KEY, score: 0.0, reason: Reasons::NEUTRAL)
-      end
-      private_class_method :neutral
     end
   end
 end

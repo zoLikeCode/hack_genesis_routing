@@ -6,17 +6,21 @@ module Routing
       KEY = "cascade_priority"
       METRICS = %w[catalog.priority].freeze
 
-      def self.call(provider, _operation, _snapshot, _policy = nil)
-        priority = provider.priority
-        return Contribution.new(name: KEY, score: 0.0, reason: Reasons::NEUTRAL) if priority.nil?
+      def self.score_all(providers:)
+        defined = providers.filter_map(&:priority).uniq.sort
+        levels = defined + (providers.any? { |provider| provider.priority.nil? } ? [nil] : [])
+        return providers.to_h { |provider| [provider.name, 1.0] } if levels.one?
 
-        Routing.assert(priority.positive?, "priority must be a positive integer")
-        score = (1.0 / priority).clamp(-1.0, 1.0)
+        providers.to_h do |provider|
+          index = levels.index(provider.priority)
+          [provider.name, 1.0 - (index.to_f / (levels.size - 1))]
+        end
+      end
+
+      def self.from_score(provider, score)
         Contribution.new(
-          name: KEY,
-          score: score,
-          reason: Reasons::CASCADE_PRIORITY,
-          details: "priority #{priority}"
+          name: KEY, score: score, reason: Reasons::CASCADE_PRIORITY,
+          details: "priority #{provider.priority || 'unset'} score #{score.round(3)}"
         )
       end
     end

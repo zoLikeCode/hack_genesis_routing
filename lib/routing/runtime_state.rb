@@ -46,12 +46,10 @@ module Routing
       Routing.assert(policy.nil? || policy.is_a?(Policy), "runtime policy must be Routing::Policy")
       @providers = providers
       @history = history
-      config_for = policy && ->(provider) { policy.metrics_for(provider) }
       @metrics = Metrics::Store.seed(
         history: history,
         providers: providers,
-        config: metrics_config || policy&.metrics,
-        config_for: config_for
+        config: metrics_config || policy&.metrics
       )
       @committed_counts = Hash.new(0)
       @pending_counts = Hash.new(0)
@@ -130,9 +128,23 @@ module Routing
 
         Routing.assert(found.timed_out?, "reservation #{key} is not timed out")
         settle_active!(found, settlement)
-        rewrite_metric!(operation_id: operation_id, provider_name: provider_name, status: settlement,
-                        reservation: found)
+        rewrite_metric!(operation_id: operation_id, provider_name: provider_name, status: settlement)
         found
+      end
+    end
+
+    def record_outcome!(reservation:, operation:, status:, latency_sec:)
+      validate_metric!(operation, reservation.provider_name, status, latency_sec)
+      @mutex.synchronize do
+        stored = active_reservation!(reservation)
+        @metrics.record(metric_observation(operation, stored.provider_name, status, latency_sec))
+        if status == "expired"
+          stored.mark_timed_out!
+          bump_revision!
+        else
+          settle_active!(stored, status)
+        end
+        stored
       end
     end
 
@@ -141,10 +153,7 @@ module Routing
     end
 
     def record_metric!(operation:, provider_name:, status:, latency_sec:)
-      Routing.assert(operation.is_a?(Operation), "metric record requires Operation")
-      Routing.assert(provider_name.is_a?(String) && !provider_name.empty?, "provider name required")
-      Routing.assert(History::STATUSES.include?(status), "unknown metric status #{status}")
-      Routing.assert(latency_sec.is_a?(Numeric) && latency_sec >= 0, "latency_sec must be non-negative")
+      validate_metric!(operation, provider_name, status, latency_sec)
       @mutex.synchronize do
         @metrics.record(metric_observation(operation, provider_name, status, latency_sec))
         bump_revision!
@@ -158,14 +167,21 @@ module Routing
 
     private
 
-    def rewrite_metric!(operation_id:, provider_name:, status:, reservation:)
+    def rewrite_metric!(operation_id:, provider_name:, status:)
       mapped = status == "approved" ? "approved" : "rejected"
       @metrics.update_status(
         operation_id: operation_id,
         provider_name: provider_name,
-        status: mapped,
-        observation: metric_observation(reservation.operation, provider_name, mapped, nil)
+        status: mapped
       )
+    end
+
+    def validate_metric!(operation, provider_name, status, latency_sec)
+      Routing.assert(operation.is_a?(Operation), "metric record requires Operation")
+      Routing.assert(provider_name.is_a?(String) && !provider_name.empty?, "provider name required")
+      Routing.assert(History::STATUSES.include?(status), "unknown metric status #{status}")
+      Routing.assert(latency_sec.nil? || (latency_sec.is_a?(Numeric) && latency_sec >= 0),
+                     "latency_sec must be nil or non-negative")
     end
 
     def metric_observation(operation, provider_name, status, latency_sec)
@@ -177,6 +193,7 @@ module Routing
         created_at: operation.created_at || Time.at(0),
         amount: operation.amount,
         bank: operation.bank,
+        initial_status: status,
         status: status,
         latency_sec: latency_sec
       )

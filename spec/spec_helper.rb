@@ -5,7 +5,9 @@ require "routing"
 
 SPEC_ROOT = File.expand_path("..", __dir__)
 
-Dir[File.expand_path("support/**/*.rb", __dir__)].each { |path| require path }
+Dir.glob("**/*.rb", base: File.expand_path("support", __dir__)).sort.each do |relative|
+  require File.expand_path(relative, File.expand_path("support", __dir__))
+end
 
 RSpec.configure do |config|
   config.include RoutingSpec::Fixtures

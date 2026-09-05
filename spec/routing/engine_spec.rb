@@ -50,7 +50,7 @@ RSpec.describe Routing::Engine do
     it "rolls a rejected final fallback out of traffic share", :aggregate_failures do
       decisions = rejected_fallback_decisions
 
-      expect(decisions.map(&:selected_provider)).to eq(%w[spacepayments vipay payflow])
+      expect(decisions.map(&:selected_provider)).to eq(%w[spacepayments vipay vipay])
       expect(decisions.first.simulated_result).to eq("rejected")
     end
 

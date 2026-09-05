@@ -37,6 +37,7 @@ module RoutingSpec
         created_at: overrides.fetch(:created_at, Time.iso8601("2026-07-30T08:00:00+03:00")),
         amount: overrides.fetch(:amount, 15_000),
         bank: overrides.fetch(:bank, "sberbank"),
+        initial_status: overrides.fetch(:initial_status, overrides.fetch(:status, "approved")),
         status: overrides.fetch(:status, "approved"),
         latency_sec: overrides.fetch(:latency_sec, 30)
       )
@@ -44,11 +45,7 @@ module RoutingSpec
 
     def default_strategy_weights
       {
-        "count_share" => { "enabled" => true, "weight" => 0.30 },
-        "volume_share" => { "enabled" => true, "weight" => 0.20 },
-        "conversion" => { "enabled" => true, "weight" => 0.20 },
-        "cascade_priority" => { "enabled" => true, "weight" => 0.10 },
-        "financial_obligation" => { "enabled" => true, "weight" => 0.05 }
+        "cascade_priority" => { "enabled" => true, "weight" => 1.0 }
       }
     end
 

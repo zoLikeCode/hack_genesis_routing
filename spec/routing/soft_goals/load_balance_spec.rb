@@ -1,7 +1,7 @@
 # frozen_string_literal: true
 
 RSpec.describe Routing::SoftGoals::LoadBalance do
-  it "prefers a provider with more free in-progress capacity" do
+  it "uses capacity after the candidate reservation" do
     free = build_provider(in_progress_count: 1, in_progress_count_limit: 10)
     busy = build_provider(in_progress_count: 8, in_progress_count_limit: 10)
 
@@ -11,24 +11,20 @@ RSpec.describe Routing::SoftGoals::LoadBalance do
     expect(free_score).to be > busy_score
   end
 
-  it "treats RPM pressure as load" do
+  it "includes the pending request in RPM utilization" do
     at = Time.iso8601("2026-07-30T09:05:00+03:00")
-    free = build_provider(requests_per_minute_limit: 10, in_progress_count_limit: nil, in_progress_amount_limit: nil)
-    busy = build_provider(requests_per_minute_limit: 10, in_progress_count_limit: nil, in_progress_amount_limit: nil)
-    8.times { busy.record_request!(at) }
-    operation = build_operation(created_at: at.iso8601)
+    provider = build_provider(requests_per_minute_limit: 10, in_progress_count_limit: nil,
+                              in_progress_amount_limit: nil, daily_amount_limit: nil)
+    8.times { provider.record_request!(at) }
 
-    expect(described_class.call(free, operation, empty_snapshot).score)
-      .to be > described_class.call(busy, operation, empty_snapshot).score
+    expect(described_class.call(provider, build_operation(created_at: at), empty_snapshot).score)
+      .to be_within(1e-10).of(0.1)
   end
 
-  it "is neutral when load limits are unlimited" do
-    provider = build_provider(
-      in_progress_count_limit: nil,
-      in_progress_amount_limit: nil,
-      requests_per_minute_limit: nil
-    )
+  it "returns one when no capacity limits exist" do
+    provider = build_provider(in_progress_count_limit: nil, in_progress_amount_limit: nil,
+                              requests_per_minute_limit: nil, daily_amount_limit: nil)
 
-    expect(described_class.call(provider, build_operation, empty_snapshot).score).to eq(0.0)
+    expect(described_class.call(provider, build_operation, empty_snapshot).score).to eq(1.0)
   end
 end

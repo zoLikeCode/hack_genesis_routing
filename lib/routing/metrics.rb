@@ -2,17 +2,12 @@
 
 module Routing
   module Metrics
-    # A metric is an observable. Strategies combine metrics into a score.
-    # COMPONENTS are the window-quality family; Inputs lists every family.
-    # Ranker consumes the window vector twice: SoftGoals::HistoricalQuality
-    # (signed blend of COMPONENTS) and health (multiplier on the strategy mix).
-    COMPONENTS = %w[approval_rate availability acceptance latency].freeze
-    COMBINATIONS = %w[weighted_sum].freeze
-    MULTIPLIERS = %w[health].freeze
-
     Vector = Data.define(
-      :score, :sample_size, :scope, :approval_rate, :availability, :acceptance, :latency,
-      :health, :timeout_rate, :refusal_rate, :p90_latency_sec
+      :score, :sample_size, :scope, :source, :prior,
+      :initial_approved_count, :initial_rejected_count, :initial_timeout_count,
+      :initial_approval_rate, :initial_timeout_rate, :initial_refusal_rate, :initial_acceptance,
+      :final_approved_count, :final_rejected_count, :unresolved_count,
+      :p90_initial_latency_sec, :latency_sample_size, :last_observation_at, :data_age_sec
     )
 
     def self.compatible?(provider, observation)

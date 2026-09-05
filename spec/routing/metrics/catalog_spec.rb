@@ -4,91 +4,88 @@ RSpec.describe Routing::Metrics::Catalog do
   let(:provider) { build_provider }
   let(:operation) { build_operation }
 
-  it "uses a neutral approval prior when the window is empty", :aggregate_failures do
+  it "uses the published conversion as the empty-window prior" do
     vector = described_class.call(observations: [], provider: provider, operation: operation)
 
-    expect(vector).to have_attributes(scope: "live_prior", sample_size: 0, approval_rate: 0.5, acceptance: 0.5)
-    expect(vector.availability).to be_within(0.001).of(0.90)
-    expect(vector.health).to be_within(0.0001).of(0.925)
+    expect(vector).to have_attributes(
+      score: 0.87, prior: 0.87, scope: "prior", source: "published_prior", sample_size: 0
+    )
   end
 
-  it "does not take the empty-window prior from conversion_24h" do
-    hot = build_provider(conversion_24h: 0.99)
-    vector = described_class.call(observations: [], provider: hot, operation: operation)
+  it "uses the configured fallback prior when conversion_24h is absent" do
+    vector = described_class.call(
+      observations: [], provider: build_provider(conversion_24h: nil), operation: operation
+    )
 
-    expect(vector.approval_rate).to eq(0.5)
+    expect(vector.score).to eq(0.5)
   end
 
-  it "pins the default weighted_sum formulas", :aggregate_failures do
+  it "estimates initial approved probability and reports initial and final outcomes", :aggregate_failures do
     observations = [
       build_observation(operation_id: "a", status: "approved", latency_sec: 20),
       build_observation(operation_id: "b", status: "rejected", latency_sec: 10),
-      build_observation(operation_id: "c", status: "expired", latency_sec: 500)
+      build_observation(operation_id: "c", initial_status: "expired", status: "approved", latency_sec: 500)
     ]
     vector = described_class.call(observations: observations, provider: provider, operation: operation)
 
-    expect(vector.sample_size).to eq(3)
-    expect(vector.approval_rate).to be_within(0.0001).of(6.0 / 13)
-    expect(vector.timeout_rate).to be_within(0.0001).of(0.1875)
-    expect(vector.availability).to be_within(0.0001).of(0.8125)
-    expect(vector.acceptance).to be_within(0.0001).of(0.5)
-    expect(vector.p90_latency_sec).to be_within(0.0001).of(19.0)
-    expect(vector.latency).to be_within(0.0001).of(581.0 / 600)
-    expect(vector.health).to be_within(0.0001).of(0.765625)
-    expect(vector.score).to be_within(0.0001).of((2 * expected_raw_quality) - 1)
+    expect(vector.score).to be_within(0.0001).of((1 + (10 * 0.87)) / 13)
+    expect(vector).to have_attributes(
+      sample_size: 3, initial_approved_count: 1, initial_rejected_count: 1,
+      initial_timeout_count: 1, final_approved_count: 2, final_rejected_count: 1,
+      unresolved_count: 0, latency_sample_size: 2
+    )
+    expect(vector.p90_initial_latency_sec).to be_within(0.0001).of(19.0)
   end
 
-  it "computes health from the recent slice" do
-    observations = [
-      build_observation(operation_id: "old", status: "approved",
-                        created_at: Time.iso8601("2026-07-30T07:00:00+03:00")),
-      build_observation(operation_id: "new", status: "expired",
-                        created_at: Time.iso8601("2026-07-30T08:00:00+03:00"))
-    ]
+  it "does not change conversion after a late timeout approval" do
+    pending = build_observation(operation_id: "late", initial_status: "expired", status: "expired")
+    approved = pending.with(status: "approved")
+
+    pending_score = described_class.call(observations: [pending], provider: provider, operation: operation).score
+    approved_score = described_class.call(observations: [approved], provider: provider, operation: operation).score
+
+    expect(approved_score).to eq(pending_score)
+  end
+
+  it "filters time and causality before taking the bounded tail", :aggregate_failures do
     config = Routing::Metrics::Config.parse(
-      "window" => { "recent_observations" => 1 },
-      "multipliers" => { "health" => { "availability_weight" => 1.0, "acceptance_weight" => 0.0 } }
+      "window" => { "max_observations" => 2, "lookback_hours" => 24 }
     )
-    vector = described_class.call(
-      observations: observations, provider: provider, operation: operation, config: config
-    )
-
-    expect(vector.health).to be < 0.9
-  end
-
-  it "does not let conversion_24h inflate health when every recent attempt timed out", :aggregate_failures do
-    observations = Array.new(10) do |index|
-      build_observation(operation_id: "exp_#{index}", status: "expired", latency_sec: 500)
+    past = [
+      build_observation(operation_id: "past_1", created_at: operation.created_at - 120, status: "rejected"),
+      build_observation(operation_id: "past_2", created_at: operation.created_at - 60, status: "approved"),
+      build_observation(operation_id: "past_3", created_at: operation.created_at - 30, status: "approved")
+    ]
+    future_rows = Array.new(60) do |index|
+      build_observation(operation_id: "future_#{index}", created_at: operation.created_at + index + 1)
     end
-    vector = described_class.call(observations: observations, provider: provider, operation: operation)
+    vector = described_class.call(
+      observations: past + future_rows, provider: provider, operation: operation, config: config
+    )
 
-    expect(vector.acceptance).to be_within(0.0001).of(0.5)
-    expect(vector.availability).to be_within(0.0001).of(0.3)
-    expect(vector.health).to be_within(0.0001).of(0.475)
+    expect(vector.sample_size).to eq(2)
+    expect(vector.initial_approved_count).to eq(2)
   end
 
-  it "includes a previous operation with the same created_at" do
-    peer = build_observation(operation_id: "op_peer", created_at: operation.created_at, status: "approved")
-    vector = described_class.call(observations: [peer], provider: provider, operation: operation)
+  it "uses a segment prior calculated from the rest of provider history", :aggregate_failures do
+    segment = Array.new(10) do |index|
+      build_observation(operation_id: "seg_#{index}", bank: "sberbank", amount: 15_000, status: "approved")
+    end
+    rest = Array.new(10) do |index|
+      build_observation(operation_id: "rest_#{index}", bank: "tinkoff", amount: 80_000, status: "rejected")
+    end
+    vector = described_class.call(observations: segment + rest, provider: provider, operation: operation)
+    rest_estimate = (10 * 0.87) / 20
+    expected = (10 + (10 * rest_estimate)) / 20
 
-    expect(vector.sample_size).to eq(1)
+    expect(vector).to have_attributes(scope: "bank_amount", sample_size: 10)
+    expect(vector.score).to be_within(0.0001).of(expected)
   end
 
-  it "ignores the current operation id even when the timestamp matches" do
-    self_row = build_observation(operation_id: operation.id, created_at: operation.created_at, status: "approved")
-    vector = described_class.call(observations: [self_row], provider: provider, operation: operation)
+  it "excludes the current operation id at the same timestamp" do
+    row = build_observation(operation_id: operation.id, created_at: operation.created_at)
+    vector = described_class.call(observations: [row], provider: provider, operation: operation)
 
-    expect(vector).to have_attributes(scope: "live_prior", sample_size: 0)
-  end
-
-  it "drops incompatible rows from summarize" do
-    rows = [build_observation(operation_id: "blocked", bank: "alfa", status: "approved")]
-    vector = described_class.summarize(observations: rows, provider: provider)
-
-    expect(vector).to have_attributes(scope: "live_prior", sample_size: 0)
-  end
-
-  def expected_raw_quality
-    (0.40 * (6.0 / 13)) + (0.25 * 0.8125) + (0.15 * 0.5) + (0.20 * (581.0 / 600))
+    expect(vector.sample_size).to eq(0)
   end
 end

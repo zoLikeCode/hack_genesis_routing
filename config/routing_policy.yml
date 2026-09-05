@@ -1,64 +1,40 @@
 fallback_provider: spacepayments
 simulation_seed: 1
+
 status_check:
   enabled: true
   initial_delay_sec: 5
   retry_delays_sec: [5, 15, 30, 60, 120]
   max_attempts: 10
 
+# Mandatory eligibility rules. Strategies never override these constraints.
 hard_constraints:
   default_requests_per_minute_limit: null
 
+# One quality estimate: probability of receiving approved on the initial call.
+# The published conversion_24h is a regularizing prior, not a second score.
 metrics:
   window:
     max_observations: 50
-    recent_observations: 10
+    lookback_hours: 24
   smoothing:
     prior_strength: 10.0
-    approval_prior: 0.5
-    timeout_prior: 0.10
-    timeout_prior_strength: 5.0
-    segment_min_size: 5
-    segment_confidence_strength: 10.0
-  combination: weighted_sum
-  components:
-    approval_rate:
-      enabled: true
-      weight: 0.40
-    availability:
-      enabled: true
-      weight: 0.25
-    acceptance:
-      enabled: true
-      weight: 0.15
-    latency:
-      enabled: true
-      weight: 0.20
-      bad_p90_sec: 600
-  multipliers:
-    health:
-      enabled: true
-      floor: 0.25
-      exponent: 1.0
-      availability_weight: 0.60
-      acceptance_weight: 0.40
+    default_conversion_prior: 0.5
+    segment_min_size: 10
+    segment_prior_strength: 10.0
 
-# Nested combinations:
-#   metric   → observable (session, catalog, window, runtime, operation)
-#   strategy → combination of metrics → score in [-1, 1]
-#   profile  → combination of strategies → base = Σ w_strategy × s_strategy
-#   total    = base × health   (health is also a metric combination)
-#
-# Window components under metrics: are metrics too; historical_quality is the
-# strategy that combines them. conversion still uses conversion_24h.
-# To add a metric that should affect selection: register it in
-# Metrics::Inputs, produce the value, then list it on a SoftGoals::*::METRICS
-# (existing strategy or a new class on GOALS).
-#
-# There are two mutually exclusive ways to select strategies:
-# 1. Enable one or more strategies directly and do not select any profiles.
-# 2. Disable every direct strategy, select a default profile, and optionally
-#    assign another profile to a specific provider.
+# Inclusive upper bounds. The final band must be open-ended.
+amount_bands:
+  - max: 50000
+    providers: [payflow, vipay, quickpay]
+  - max: 100000
+    providers: [vipay, quickpay, payflow]
+  - max: null
+    providers: [quickpay, vipay, payflow]
+
+# Direct mode and profile mode are mutually exclusive. In direct mode set
+# active_profile to null, remove provider_profiles, and enable one or more
+# strategies here. Enabled weights are normalized automatically.
 active_profile: balanced
 
 provider_profiles:
@@ -67,114 +43,55 @@ provider_profiles:
   quickpay: capacity_obligation
 
 strategies:
-  count_share:
-    enabled: false
-    weight: 0.30
-  volume_share:
-    enabled: false
-    weight: 0.20
-  conversion:
-    enabled: false
-    weight: 0.20
-  historical_quality:
-    enabled: false
-    weight: 0.30
-  cascade_priority:
-    enabled: false
-    weight: 0.10
-  amount_band:
-    enabled: false
-    weight: 0.10
-  financial_obligation:
-    enabled: false
-    weight: 0.05
-  load_balance:
-    enabled: false
-    weight: 0.05
+  conversion: { enabled: false, weight: 1.0 }
+  count_share: { enabled: false, weight: 1.0 }
+  volume_share: { enabled: false, weight: 1.0 }
+  load_balance: { enabled: false, weight: 1.0 }
+  financial_obligation: { enabled: false, weight: 1.0 }
+  cascade_priority: { enabled: false, weight: 1.0 }
+  amount_band: { enabled: false, weight: 1.0 }
 
 profiles:
   balanced:
     strategies:
-      count_share:
-        weight: 0.25
-      volume_share:
-        weight: 0.15
-      conversion:
-        weight: 0.15
-      historical_quality:
-        weight: 0.20
-      cascade_priority:
-        weight: 0.10
-      amount_band:
-        weight: 0.05
-      financial_obligation:
-        weight: 0.05
-      load_balance:
-        weight: 0.05
-  historical_only:
-    strategies:
-      historical_quality:
-        weight: 1.0
-  conversion_first:
-    strategies:
-      conversion:
-        weight: 0.60
-      count_share:
-        weight: 0.20
-      volume_share:
-        weight: 0.10
-      load_balance:
-        weight: 0.10
-  cascade:
-    strategies:
-      cascade_priority:
-        weight: 1.0
+      conversion: { weight: 0.65 }
+      count_share: { weight: 0.10 }
+      volume_share: { weight: 0.10 }
+      load_balance: { weight: 0.10 }
+      financial_obligation: { weight: 0.05 }
   reliable_history:
     strategies:
-      historical_quality:
-        weight: 0.35
-      conversion:
-        weight: 0.25
-      count_share:
-        weight: 0.10
-      volume_share:
-        weight: 0.15
-      load_balance:
-        weight: 0.10
-      financial_obligation:
-        weight: 0.05
-    metrics:
-      components:
-        availability:
-          weight: 0.40
-      multipliers:
-        health:
-          exponent: 1.5
+      conversion: { weight: 0.75 }
+      count_share: { weight: 0.05 }
+      volume_share: { weight: 0.05 }
+      load_balance: { weight: 0.10 }
+      financial_obligation: { weight: 0.05 }
   controlled_share:
     strategies:
-      volume_share:
-        weight: 0.45
-      historical_quality:
-        weight: 0.30
-      conversion:
-        weight: 0.05
-      count_share:
-        weight: 0.05
-      load_balance:
-        weight: 0.10
-      cascade_priority:
-        weight: 0.05
+      conversion: { weight: 0.65 }
+      count_share: { weight: 0.05 }
+      volume_share: { weight: 0.20 }
+      load_balance: { weight: 0.05 }
+      financial_obligation: { weight: 0.05 }
   capacity_obligation:
     strategies:
-      financial_obligation:
-        weight: 0.30
-      historical_quality:
-        weight: 0.25
-      load_balance:
-        weight: 0.20
-      volume_share:
-        weight: 0.15
-      count_share:
-        weight: 0.05
-      conversion:
-        weight: 0.05
+      conversion: { weight: 0.65 }
+      count_share: { weight: 0.025 }
+      volume_share: { weight: 0.025 }
+      load_balance: { weight: 0.15 }
+      financial_obligation: { weight: 0.15 }
+
+  only_conversion:
+    strategies: { conversion: { weight: 1.0 } }
+  only_count_share:
+    strategies: { count_share: { weight: 1.0 } }
+  only_volume_share:
+    strategies: { volume_share: { weight: 1.0 } }
+  only_load_balance:
+    strategies: { load_balance: { weight: 1.0 } }
+  only_financial_obligation:
+    strategies: { financial_obligation: { weight: 1.0 } }
+  only_cascade_priority:
+    strategies: { cascade_priority: { weight: 1.0 } }
+  only_amount_band:
+    strategies: { amount_band: { weight: 1.0 } }

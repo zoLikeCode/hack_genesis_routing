@@ -13,8 +13,4 @@ RSpec.describe Routing::Metrics::Inputs do
     used = Routing::SoftGoals.metric_map.values.flatten
     expect(used - described_class.keys).to eq([])
   end
-
-  it "registers health multiplier metrics" do
-    expect(described_class::HEALTH - described_class.keys).to eq([])
-  end
 end

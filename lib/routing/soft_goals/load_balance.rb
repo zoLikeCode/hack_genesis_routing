@@ -11,15 +11,19 @@ module Routing
         catalog.in_progress_amount_limit
         runtime.request_count
         catalog.requests_per_minute_limit
+        runtime.daily_reserved_amount
+        catalog.daily_amount_limit
+        operation.amount
       ].freeze
 
       def self.call(provider, operation, _snapshot, _policy = nil)
         utilizations = [
-          utilization(provider.in_progress_count, provider.in_progress_count_limit),
-          utilization(provider.in_progress_amount, provider.in_progress_amount_limit),
-          rpm_utilization(provider, operation)
+          utilization(provider.in_progress_count + 1, provider.in_progress_count_limit),
+          utilization(provider.in_progress_amount + operation.amount, provider.in_progress_amount_limit),
+          rpm_utilization(provider, operation),
+          utilization(provider.daily_approved_amount + operation.amount, provider.daily_amount_limit)
         ].compact
-        return neutral if utilizations.empty?
+        return unlimited if utilizations.empty?
 
         load = utilizations.max.clamp(0.0, 1.0)
         score = 1.0 - load
@@ -35,7 +39,7 @@ module Routing
         limit = provider.requests_per_minute_limit
         return if limit.nil? || operation.created_at.nil?
 
-        utilization(provider.request_count_at(operation.created_at), limit)
+        utilization(provider.request_count_at(operation.created_at) + 1, limit)
       end
       private_class_method :rpm_utilization
 
@@ -47,10 +51,11 @@ module Routing
       end
       private_class_method :utilization
 
-      def self.neutral
-        Contribution.new(name: KEY, score: 0.0, reason: Reasons::NEUTRAL)
+      def self.unlimited
+        Contribution.new(name: KEY, score: 1.0, reason: Reasons::AVAILABLE_CAPACITY,
+                         details: "no capacity limits configured")
       end
-      private_class_method :neutral
+      private_class_method :unlimited
     end
   end
 end

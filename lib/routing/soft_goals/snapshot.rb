@@ -3,7 +3,7 @@
 module Routing
   module SoftGoals
     class Snapshot
-      attr_reader :version, :history, :metrics
+      attr_reader :version, :history, :metrics, :providers
 
       def self.from_providers(providers, **options)
         Routing.assert(providers.respond_to?(:each), "providers must be enumerable")
@@ -14,7 +14,7 @@ module Routing
         snapshot = new(
           counts: session_counts, volumes: volumes, count_targets: count_targets,
           volume_targets: volume_targets, history: options[:history], metrics: options[:metrics],
-          version: options.fetch(:version, 0)
+          providers: providers, version: options.fetch(:version, 0)
         )
         snapshot.send(:make_readonly!) if options[:readonly]
         snapshot
@@ -36,19 +36,16 @@ module Routing
       private_class_method :provider_totals
 
       def initialize(counts: {}, volumes: {}, count_targets: {}, volume_targets: {}, **options)
-        history = options.fetch(:history, nil)
-        metrics = options.fetch(:metrics, nil)
-        version = options.fetch(:version, 0)
-        Routing.assert(version.is_a?(Integer) && version >= 0, "snapshot version must be non-negative")
-        Routing.assert(history.nil? || history.is_a?(History), "snapshot history must be Routing::History")
-        Routing.assert(metrics.nil? || metrics.is_a?(Metrics::Store), "snapshot metrics must be Metrics::Store")
+        values = snapshot_values(options)
+        validate_snapshot_values!(values)
         @counts = normalize_totals(counts, "counts")
         @volumes = normalize_totals(volumes, "volumes")
         @count_targets = normalize_totals(count_targets, "count_targets")
         @volume_targets = normalize_totals(volume_targets, "volume_targets")
-        @history = history
-        @metrics = metrics
-        @version = version
+        @history = values.fetch(:history)
+        @metrics = values.fetch(:metrics)
+        @providers = values.fetch(:providers).dup.freeze
+        @version = values.fetch(:version)
         @readonly = false
       end
 
@@ -91,6 +88,22 @@ module Routing
         @volumes.values.sum
       end
 
+      def count_totals
+        @counts.dup.freeze
+      end
+
+      def volume_totals
+        @volumes.dup.freeze
+      end
+
+      def count_targets
+        @count_targets.dup.freeze
+      end
+
+      def volume_targets
+        @volume_targets.dup.freeze
+      end
+
       def count_share_pct(name)
         share_pct(count(name), total_count)
       end
@@ -108,6 +121,25 @@ module Routing
       end
 
       private
+
+      def snapshot_values(options)
+        {
+          history: options.fetch(:history, nil), metrics: options.fetch(:metrics, nil),
+          providers: options.fetch(:providers, []), version: options.fetch(:version, 0)
+        }
+      end
+
+      def validate_snapshot_values!(values)
+        Routing.assert(values.fetch(:version).is_a?(Integer) && values.fetch(:version) >= 0,
+                       "snapshot version must be non-negative")
+        Routing.assert(values.fetch(:history).nil? || values.fetch(:history).is_a?(History),
+                       "snapshot history must be Routing::History")
+        Routing.assert(values.fetch(:metrics).nil? || values.fetch(:metrics).is_a?(Metrics::Store),
+                       "snapshot metrics must be Metrics::Store")
+        providers = values.fetch(:providers)
+        Routing.assert(providers.is_a?(Array) && providers.all?(Provider),
+                       "snapshot providers must be Provider objects")
+      end
 
       def ensure_mutable!
         Routing.assert(!@readonly, "cannot mutate a readonly snapshot")

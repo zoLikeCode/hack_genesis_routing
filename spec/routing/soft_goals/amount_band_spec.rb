@@ -1,18 +1,22 @@
 # frozen_string_literal: true
 
 RSpec.describe Routing::SoftGoals::AmountBand do
-  it "prefers the provider whose max is closer to the amount", :aggregate_failures do
-    payflow = build_provider(limit_amount_min: 500, limit_amount_max: 50_000)
-    vipay = build_provider(limit_amount_min: 1_000, limit_amount_max: 100_000)
-    operation = build_operation(amount: 48_000)
+  let(:policy) { Routing::Policy.load(File.join(SPEC_ROOT, "config/routing_policy.yml")) }
 
-    expect(described_class.call(payflow, operation, empty_snapshot).score)
-      .to be > described_class.call(vipay, operation, empty_snapshot).score
+  it "uses configured preferences at exact inclusive boundaries", :aggregate_failures do
+    payflow = build_provider(payment_system: "payflow")
+    vipay = build_provider(payment_system: "vipay")
+
+    expect(described_class.call(payflow, build_operation(amount: 50_000), empty_snapshot, policy).score).to eq(1.0)
+    expect(described_class.call(vipay, build_operation(amount: 50_001), empty_snapshot, policy).score).to eq(1.0)
   end
 
-  it "is neutral when the provider has no maximum" do
-    provider = build_provider(limit_amount_min: nil, limit_amount_max: nil)
+  it "prefers quickpay above one hundred thousand" do
+    quickpay = build_provider(payment_system: "quickpay")
+    vipay = build_provider(payment_system: "vipay")
+    operation = build_operation(amount: 100_001)
 
-    expect(described_class.call(provider, build_operation, empty_snapshot).score).to eq(0.0)
+    expect(described_class.call(quickpay, operation, empty_snapshot, policy).score)
+      .to be > described_class.call(vipay, operation, empty_snapshot, policy).score
   end
 end

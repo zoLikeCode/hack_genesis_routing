@@ -37,6 +37,7 @@ module Routing
         "outcomes" => outcomes,
         "history_baseline" => history_baseline,
         "provider_metrics" => provider_metrics,
+        "conversion_backtest" => conversion_backtest,
         "routing_profiles" => routing_profiles,
         "unassigned_operations" => 0,
         "rejected_operations" => rejected_decisions.size,
@@ -110,27 +111,10 @@ module Routing
     end
 
     def outcome_entry(name)
-      final = @decisions.select { |decision| decision.selected_provider == name }
-      counts = final.map { |decision| effective_result(decision) }.tally
-      cascade_rejections = simulated_skips(name, Simulator::REJECTED)
-      cascade_expirations = simulated_skips(name, Simulator::EXPIRED)
-      attempted = final.size + cascade_rejections + cascade_expirations
-      {
-        "attempted" => attempted,
-        "approved" => counts.fetch("approved", 0),
-        "rejected" => counts.fetch("rejected", 0) + cascade_rejections,
-        "expired" => counts.fetch("expired", 0) + cascade_expirations,
-        "approval_pct" => percentage(counts.fetch("approved", 0), attempted),
-        "avg_final_latency_sec" => average(final.map(&:latency_sec))
-      }
-    end
-
-    def simulated_skips(name, reason)
-      @decisions.sum do |decision|
-        decision.attempts.count do |attempt|
-          attempt.provider == name && attempt.decision == "skipped" && attempt.reason == reason
-        end
-      end
+      OutcomeStats.call(
+        decisions: @decisions, provider_name: name,
+        effective_result: method(:effective_result)
+      )
     end
 
     def history_baseline
@@ -162,9 +146,7 @@ module Routing
     end
 
     def recommendations
-      utilization_recs + share_recs + skip_recs + timeout_recs +
-        ProviderStats.conversion_recs(@history, outcomes) +
-        ProviderStats.recommendations(provider_metrics, @policy)
+      utilization_recs + share_recs + skip_recs + timeout_recs
     end
 
     def utilization_recs
@@ -229,20 +211,17 @@ module Routing
         runtime_state: @runtime_state,
         providers: @providers,
         policy: @policy,
-        names: distribution_names
+        names: distribution_names,
+        as_of: report_as_of
       )
     end
 
-    def percentage(part, total)
-      return 0.0 if total.zero?
-
-      (100.0 * part / total).round(1)
+    def conversion_backtest
+      Metrics::Backtest.call(history: @history, providers: @providers, config: @policy.metrics)
     end
 
-    def average(values)
-      return 0.0 if values.empty?
-
-      (values.sum.to_f / values.size).round(1)
+    def report_as_of
+      @operations.filter_map(&:created_at).max
     end
   end
 end

@@ -29,7 +29,7 @@ RSpec.describe Routing::Report do
   it "includes the required report keys" do
     expect(report.keys).to include(
       "period", "total_operations", "distribution", "outcomes", "history_baseline",
-      "provider_metrics", "routing_profiles", "unassigned_operations", "rejected_operations",
+      "provider_metrics", "conversion_backtest", "routing_profiles", "unassigned_operations", "rejected_operations",
       "skip_reasons", "projected_daily_utilization", "recommendations"
     )
   end
@@ -95,7 +95,22 @@ RSpec.describe Routing::Report do
     )
 
     expect(metrics_report.dig("provider_metrics", "vipay")).to include(
-      "availability", "acceptance", "health", "timeout_rate", "refusal_rate"
+      "conversion_estimate", "initial_conversion", "initial_timeout_rate",
+      "initial_answer_success", "final_approved", "p90_initial_latency_sec"
+    )
+  end
+
+  it "includes a sequential Brier comparison for observed history" do
+    history = Routing::History.load(File.join(SPEC_ROOT, "data/operations_history.csv"))
+    report_with_history = described_class.call(
+      decisions: [decision], operations: [build_operation], providers: pool,
+      policy: build_policy, history: history
+    )
+
+    expect(report_with_history.dig("conversion_backtest", "vipay")).to include(
+      "sample_size" => be_positive,
+      "model_brier" => be_between(0, 1),
+      "published_prior_brier" => be_between(0, 1)
     )
   end
 

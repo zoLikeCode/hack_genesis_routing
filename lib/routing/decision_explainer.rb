@@ -26,9 +26,7 @@ module Routing
       profile = policy.profile_for(selection.provider.name) || "individual"
       [
         "profile=#{profile}",
-        "total_score=#{score.total.round(4)}",
-        "base_total=#{score.base_total.round(4)}",
-        "health=#{score.health.round(4)}"
+        "total_score=#{score.total.round(4)}"
       ]
     end
     private_class_method :identity_parts
@@ -37,9 +35,15 @@ module Routing
       vector = score.metrics
       return [] if vector.nil?
 
-      availability = (vector.availability * 100).round(1)
-      acceptance = (vector.acceptance * 100).round(1)
-      ["availability=#{availability}%", "acceptance=#{acceptance}%"]
+      parts = [
+        "conversion_estimate=#{vector.score.round(4)}",
+        "conversion_source=#{vector.source}",
+        "conversion_scope=#{vector.scope}",
+        "conversion_n=#{vector.sample_size}",
+        "conversion_prior=#{vector.prior.round(4)}"
+      ]
+      parts << "conversion_data_age_sec=#{vector.data_age_sec.round(1)}" unless vector.data_age_sec.nil?
+      parts
     end
     private_class_method :metric_parts
 
@@ -53,7 +57,7 @@ module Routing
     def self.contributions(score, provider_name, policy)
       score.contributions.map do |item|
         weight = policy.weight_for(item.name, provider: provider_name)
-        "#{item.name}=#{item.score.round(3)}*#{weight}"
+        "#{item.name}=#{item.score.round(3)}*#{weight.round(4)}"
       end
     end
     private_class_method :contributions
@@ -69,9 +73,6 @@ module Routing
       when SoftGoals::Reasons::GOAL_DISAGREEMENT
         "goal_disagreement #{details.fetch('goal_a')}=#{details.fetch('preferred_a')} " \
         "vs #{details.fetch('goal_b')}=#{details.fetch('preferred_b')}"
-      when SoftGoals::Reasons::METRIC_DISAGREEMENT
-        "metric_disagreement #{details.fetch('metric_a')}=#{details.fetch('preferred_a')} " \
-        "vs #{details.fetch('metric_b')}=#{details.fetch('preferred_b')}"
       end
     end
     private_class_method :conflict_note

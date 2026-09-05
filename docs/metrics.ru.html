@@ -1,298 +1,77 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="ru">
 <head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Метрики роутинга</title>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Метрики маршрутизации</title>
   <style>
-    :root {
-      --bg: #f7f7f5; --fg: #1a1a18; --muted: #5c5c56; --faint: #8a8a82;
-      --line: #d9d9d1; --fill: #ecece6; --card: #ffffff; --accent: #1f6feb;
-      --ok: #1a7f37; --warn: #9a6700; --bad: #cf222e;
-      --font: "Segoe UI", system-ui, -apple-system, sans-serif;
-    }
-    @media (prefers-color-scheme: dark) {
-      :root {
-        --bg: #1b1b1a; --fg: #ecece6; --muted: #b0b0a6; --faint: #8a8a82;
-        --line: #3a3a36; --fill: #2a2a26; --card: #242422; --accent: #4c8dff;
-        --ok: #3fb950; --warn: #d4a72c; --bad: #f85149;
-      }
-    }
-    * { box-sizing: border-box; }
-    html, body { margin: 0; background: var(--bg); color: var(--fg); font: 14px/1.5 var(--font); }
-    main { max-width: 920px; margin: 0 auto; padding: 32px 24px 64px; }
-    h1 { font-size: 24px; font-weight: 650; margin: 0 0 8px; }
-    h2 { font-size: 18px; font-weight: 650; margin: 28px 0 8px; }
-    h3 { font-size: 15px; font-weight: 650; margin: 18px 0 6px; }
-    p { margin: 0 0 10px; }
-    .lede, .caption { color: var(--muted); }
-    .caption { font-size: 12px; color: var(--faint); margin-top: 6px; }
-    a { color: var(--accent); text-decoration: none; }
-    a:hover { text-decoration: underline; }
-    nav.toc { display: flex; flex-wrap: wrap; gap: 8px 14px; margin: 12px 0 8px; font-size: 13px; }
-    code, .eq { font-family: ui-monospace, "Cascadia Code", Consolas, monospace; }
-    code { font-size: 0.92em; background: var(--fill); padding: 0.1em 0.35em; border-radius: 4px; }
-    .eq {
-      display: block; background: var(--card); border: 1px solid var(--line); border-radius: 8px;
-      padding: 10px 14px; margin: 8px 0 12px; overflow-x: auto; font-size: 13px; line-height: 1.55;
-    }
-    .eq .lbl { float: right; color: var(--faint); font-size: 12px; }
-    .stats, .split { display: grid; gap: 12px; margin: 14px 0 8px; }
-    .stats { grid-template-columns: repeat(4, 1fr); }
-    .split { grid-template-columns: 1fr 1fr 1fr; }
-    .stat, .card, .callout {
-      background: var(--card); border: 1px solid var(--line); border-radius: 8px; padding: 12px 14px;
-    }
-    .stat b { display: block; font-size: 22px; font-weight: 650; }
-    .stat span { color: var(--muted); font-size: 12px; }
-    .card h3 { margin-top: 0; }
-    table {
-      width: 100%; border-collapse: collapse; background: var(--card); border: 1px solid var(--line);
-      border-radius: 8px; overflow: hidden; font-size: 13px; margin: 0 0 12px;
-    }
-    th, td { text-align: left; padding: 7px 10px; border-bottom: 1px solid var(--line); vertical-align: top; }
-    th { font-size: 12px; font-weight: 600; color: var(--muted); background: var(--fill); }
-    tr:last-child td { border-bottom: 0; }
-    ol { padding-left: 20px; }
-    ol li { margin: 0 0 6px; }
-    pre.yaml {
-      background: var(--card); border: 1px solid var(--line); border-radius: 8px; padding: 12px 14px;
-      overflow-x: auto; font: 12.5px/1.45 ui-monospace, "Cascadia Code", Consolas, monospace;
-      margin: 0 0 12px; white-space: pre-wrap; word-break: break-word;
-    }
-    .callout { margin: 12px 0; }
-    .callout strong { display: block; margin-bottom: 4px; }
-    @media (max-width: 800px) { .stats, .split { grid-template-columns: 1fr; } }
-    @page { size: A4; margin: 14mm; }
-    @media print {
-      :root { --bg: #fff; --fg: #1a1a18; --card: #fff; --fill: #f1f1ec; --line: #cfcfc6; }
-      main { max-width: none; padding: 0; }
-      table, .card, .eq, pre.yaml, .callout { break-inside: avoid; }
-      a { color: inherit; }
-    }
+    body { font: 16px/1.55 system-ui, sans-serif; max-width: 1040px; margin: 40px auto; padding: 0 24px; color: #172033; }
+    h1, h2 { color: #101828; } code, pre { background: #f2f4f7; border-radius: 6px; }
+    code { padding: 2px 5px; } pre { padding: 16px; overflow: auto; }
+    table { border-collapse: collapse; width: 100%; } th, td { border: 1px solid #d0d5dd; padding: 9px; text-align: left; }
+    th { background: #f9fafb; } .note { border-left: 4px solid #7f56d9; padding: 8px 14px; background: #f9f5ff; }
   </style>
 </head>
 <body>
-  <main>
-    <h1>Метрики роутинга</h1>
-    <p class="lede">
-      Метрика — наблюдаемая величина. Стратегия — именованная комбинация метрик в счёт [-1, 1].
-      Профиль — комбинация стратегий. Архитектура цикла —
-      в <a href="routing-architecture.ru.html">разборе роутинга</a>.
-    </p>
-    <nav class="toc">
-      <a href="#why">Зачем</a>
-      <a href="#model">Модель</a>
-      <a href="#catalog">Каталог</a>
-      <a href="#flow">Ранжирование</a>
-      <a href="#math">Окно</a>
-      <a href="#window">История</a>
-      <a href="#yaml">YAML</a>
-      <a href="#add">Новая метрика</a>
-      <a href="#guarantees">Гарантии</a>
-    </nav>
-    <div class="stats">
-      <div class="stat"><b>метрика</b><span>session / catalog / window / runtime / operation</span></div>
-      <div class="stat"><b>стратегия</b><span>комбинация метрик → [-1, 1]</span></div>
-      <div class="stat"><b>профиль</b><span>Σ w · s, затем × health</span></div>
-      <div class="stat"><b>окно</b><span>4 компоненты + health, 50 / 10</span></div>
-    </div>
+  <h1>Метрики и стратегии выбора провайдера</h1>
+  <p><b>Hard constraints → метрики → стратегии → нормированный профиль → выбор.</b>
+    Ограничения допуска обязательны и не могут быть компенсированы высоким soft-score.</p>
 
-    <h2 id="why">Зачем</h2>
-    <div class="split">
-      <section class="card">
-        <h3>Программист</h3>
-        <p>Новая величина, которая должна влиять на выбор, — это метрика: ключ в <code>Metrics::Inputs</code>, значение, список <code>METRICS</code> у стратегии. Без веток в Engine. Timeout, отказ и p90 в окне — разные поля.</p>
-      </section>
-      <section class="card">
-        <h3>Аналитика</h3>
-        <p>CSV целиком — <code>history_baseline</code>. Живое окно — <code>provider_metrics</code>. В attempts: профиль, вклады стратегий, scope, health, <code>metric_disagreement</code>. Рекомендации называют ключ YAML.</p>
-      </section>
-      <section class="card">
-        <h3>Бизнес</h3>
-        <p>Доля, конверсия, обязательства и качество попыток — разные метрики, разные стратегии, один сравнимый счёт. Трафик уходит от молчащего партнёра без бана: health режет счёт, floor не обнуляет контракт.</p>
-      </section>
-    </div>
+  <h2>Единая метрика качества</h2>
+  <p><code>conversion</code> оценивает вероятность получить <code>approved</code> на первоначальном запросе:</p>
+  <pre>p = (A + κ × p₀) / (n + κ)
+κ = 10
+p₀ = conversion_24h, иначе 0.5
+n = approved + rejected + expired первоначальных вызовов</pre>
+  <p>Это регуляризованная частота, а не заявление о независимой байесовской выборке.
+    Поздний approved после timeout не меняет первоначальный результат.</p>
 
-    <h2 id="model">Стратегия — комбинация метрик</h2>
-    <p>
-      Жёсткие фильтры (status, лимиты, банк) метриками стратегии не являются: они допускают или отсекают.
-      Всё, что после допуска двигает выбор — метрика. Как её смешать с другими — стратегия.
-      Одна метрика тоже стратегия (например <code>conversion</code> = clamp(<code>conversion_24h</code>)).
-    </p>
-    <div class="eq">
-      <span class="lbl">(0) слои</span>
-      s<sub>g</sub> = f<sub>g</sub>(метрики<sub>g</sub>) ∈ [-1, 1]<br />
-      base = Σ<sub>g</sub> w<sub>g</sub> · s<sub>g</sub><br />
-      total = base × health(window.availability, window.acceptance)<sub>recent</sub>
-    </div>
-    <table>
-      <thead><tr><th>Слой</th><th>Что это</th><th>Где живёт</th></tr></thead>
-      <tbody>
-        <tr><td>Метрика</td><td>наблюдаемая с источником</td><td><code>Metrics::Inputs</code>; окно — <code>metrics.components</code></td></tr>
-        <tr><td>Стратегия</td><td>функция от своих <code>METRICS</code></td><td><code>SoftGoals::*</code>, вес в YAML</td></tr>
-        <tr><td>Профиль</td><td>вектор весов стратегий</td><td><code>profiles.*</code>, <code>provider_profiles</code></td></tr>
-        <tr><td>Health</td><td>ещё одна комбинация метрик, не член суммы</td><td><code>multipliers.health</code> после mix</td></tr>
-      </tbody>
-    </table>
+  <h2>Причинное окно и сегменты</h2>
+  <ol>
+    <li>Исключить текущий <code>operation_id</code>, будущие и записи старше 24 часов относительно операции.</li>
+    <li>Оставить совместимые банк и сумму, отсортировать, затем взять последние 50.</li>
+    <li>Искать сегмент минимум из 10 строк: банк+диапазон → банк → диапазон → провайдер.</li>
+  </ol>
+  <p>Для сегмента:</p>
+  <pre>p_rest = (A_rest + κ × p₀) / (n_rest + κ)
+p_segment = (A_segment + γ × p_rest) / (n_segment + γ), γ = 10</pre>
+  <p>Сам сегмент не входит в <code>rest</code>. Для provider-level используется первая формула по всему окну.</p>
 
-    <h2 id="catalog">Каталог</h2>
-    <p>Текущие входы. Будущая метрика добавляется сюда же, затем в <code>METRICS</code> стратегии — и начинает решать.</p>
-    <table>
-      <thead><tr><th>Стратегия</th><th>Метрики</th><th>Комбинация</th></tr></thead>
-      <tbody>
-        <tr><td>count_share</td><td><code>session.count_share_pct</code>, <code>catalog.traffic_percentage</code></td><td>дефицит (target − actual) / 100</td></tr>
-        <tr><td>volume_share</td><td><code>session.volume_share_pct</code>, <code>catalog.volume_share_pct</code></td><td>тот же дефицит по обороту</td></tr>
-        <tr><td>conversion</td><td><code>catalog.conversion_24h</code></td><td>clamp в [0, 1]; не окно</td></tr>
-        <tr><td>historical_quality</td><td><code>window.approval_rate</code>, <code>availability</code>, <code>acceptance</code>, <code>latency</code></td><td>нормированная взвешенная сумма → 2q − 1</td></tr>
-        <tr><td>cascade_priority</td><td><code>catalog.priority</code></td><td>1 / priority</td></tr>
-        <tr><td>amount_band</td><td><code>operation.amount</code>, <code>catalog.limit_amount_max</code></td><td>amount / max</td></tr>
-        <tr><td>financial_obligation</td><td><code>runtime.daily_approved_amount</code>, min/max оборота, <code>operation.amount</code></td><td>буст ниже min + штраф от 80% max</td></tr>
-        <tr><td>load_balance</td><td>in-progress count/amount, RPM</td><td>1 − max утилизации</td></tr>
-      </tbody>
-    </table>
+  <h2>Первоначальный и конечный результаты</h2>
+  <table>
+    <tr><th>Поле</th><th>Смысл</th><th>Изменяемость</th></tr>
+    <tr><td><code>initial_status</code></td><td>approved / rejected / expired первого вызова</td><td>неизменяемое</td></tr>
+    <tr><td><code>latency_sec</code></td><td>задержка первого вызова</td><td>неизменяемая</td></tr>
+    <tr><td><code>status</code></td><td>текущий/конечный результат</td><td>меняется status-check</td></tr>
+  </table>
+  <p>Status-check переписывает только <code>status</code>. Вытесненная из scoring window попытка не возвращается;
+    reservation и status-check остаются в runtime.</p>
 
-    <h2 id="flow">Ранжирование</h2>
-    <p>
-      Ranker считает окно один раз: тот же вектор — вклад <code>historical_quality</code> и множитель health.
-      Выключить только стратегию недостаточно, чтобы убрать health:
-      <code>multipliers.health.enabled: false</code> ставит множитель 1.
-      Предпочтительный — max total среди допущенных основных. Ничья: меньший <code>priority</code>, затем имя.
-      <code>metric_disagreement</code> — конфликт компонент окна, в argmax не входит.
-      <code>goal_disagreement</code> — конфликт стратегий. Fallback вне Ranker.
-    </p>
+  <h2>Стратегии в [0, 1]</h2>
+  <table>
+    <tr><th>Стратегия</th><th>Оценка</th></tr>
+    <tr><td>conversion</td><td>регуляризованная вероятность initial approved</td></tr>
+    <tr><td>count_share / volume_share</td><td>1 − ½Σ(q − r)² для полного распределения после назначения</td></tr>
+    <tr><td>load_balance</td><td><code>1 − max(utilization_after)</code> по count, amount, RPM и daily amount</td></tr>
+    <tr><td>financial_obligation</td><td><code>(1 + bonus_min − penalty_max) / 2</code></td></tr>
+    <tr><td>cascade_priority</td><td>равномерные уровни 1…0 по всему внешнему пулу</td></tr>
+    <tr><td>amount_band</td><td>1 / 0.5 / 0 по настроенному порядку диапазона</td></tr>
+  </table>
+  <pre>total = Σ(normalized_weight × strategy_score)</pre>
+  <p>Дополнительного health-множителя нет. Нулевые/отрицательные активные веса и неизвестные ключи запрещены.</p>
 
-    <h2 id="math">Семейство окна</h2>
-    <p>
-      Четыре компоненты в [0, 1] — метрики источника <code>window</code>.
-      Стратегия <code>historical_quality</code> их комбинирует; health — отдельная комбинация recent-среза.
-    </p>
-    <p>
-      На сегменте: n, n<sub>ap</sub>, n<sub>rej</sub>, n<sub>exp</sub>.
-      π = <code>approval_prior</code> (0.5), α = <code>prior_strength</code> (10),
-      t₀ = <code>timeout_prior</code> (0.10), β = <code>timeout_prior_strength</code> (5).
-    </p>
-    <div class="eq"><span class="lbl">(1) approval</span>â = (n<sub>ap</sub> + α · π) / (n + α)</div>
-    <div class="eq"><span class="lbl">(2) timeout</span>t̂ = (n<sub>exp</sub> + β · t₀) / (n + β)&nbsp;&nbsp;availability = 1 − t̂</div>
-    <div class="eq"><span class="lbl">(3) acceptance</span>ĉ = (n<sub>ap</sub> + α · π) / (n<sub>ap</sub> + n<sub>rej</sub> + α)</div>
-    <p>
-      Expired нет в знаменателе acceptance: молчание ≠ отказ кассы.
-      <code>refusal_rate = n<sub>rej</sub> / n</code> без сглаживания, в смесь не входит.
-    </p>
-    <div class="eq">
-      <span class="lbl">(4) latency</span>
-      p90 по answered с известной latency, rank = (m − 1) · 0.90 (линейная интерполяция).<br />
-      latency = 1, если m = 0; иначе clamp<sub>[0,1]</sub>(1 − p90 / T<sub>bad</sub>), T<sub>bad</sub> = 600 с.
-    </div>
-    <p>Веса включённых компонент нормируются. Сейчас единственная комбинация — <code>weighted_sum</code>:</p>
-    <div class="eq">
-      <span class="lbl">(5) смесь</span>
-      w̃<sub>c</sub> = w<sub>c</sub> / Σ w<sub>enabled</sub>&nbsp;&nbsp;q = Σ w̃<sub>c</sub> · x<sub>c</sub> ∈ [0, 1]
-    </div>
-    <p>Дефолт: approval 0.40, availability 0.25, acceptance 0.15, latency 0.20. Overlay одного веса сдвигает все w̃.</p>
-    <div class="eq">
-      <span class="lbl">(6) сегмент</span>
-      κ = n<sub>s</sub> / (n<sub>s</sub> + γ), γ = 10&nbsp;&nbsp;q = κ q(s) + (1 − κ) q(overall), если n<sub>s</sub> ≠ n
-    </div>
-    <p>
-      Для выбора (не отчёта) первый сегмент с n ≥ 5: <code>bank_amount</code> → <code>bank</code> → <code>amount</code> → <code>provider</code>.
-      Коридоры: ≤5k / 15k / 50k / 100k / выше. Пустое окно: <code>live_prior</code>, q от π и t₀, p90 = nil.
-    </p>
-    <div class="eq">
-      <span class="lbl">(7) вклад</span>
-      score = clamp<sub>[−1,1]</sub>(2q − 1)
-    </div>
-    <div class="eq">
-      <span class="lbl">(8) health</span>
-      b = availability<sub>recent</sub>, если n<sub>ap</sub>+n<sub>rej</sub> = 0 на срезе;<br />
-      иначе b = (w<sub>A</sub> · av + w<sub>C</sub> · ĉ) / (w<sub>A</sub> + w<sub>C</sub>), дефолт 0.60 / 0.40.<br />
-      health = f + (1 − f) · b<sup>e</sup>, f = 0.25 ∈ (0, 1], e = 1 (у vipay overlay e = 1.5).
-    </div>
-    <p>
-      Recent — последние 10 строк уже отфильтрованного окна, не сегмент.
-      Нулевые ответы → health не берёт π, иначе 10 таймаутов выглядели бы как конверсия 24ч.
-      Health ∈ [f, 1] при enabled; выключен → множитель 1.
-    </p>
-    <div class="callout">
-      <strong>Пример.</strong>
-      1 approve 20 с, 1 reject 10 с, 1 expired 500 с, дефолтный YAML.
-      p90 по {10, 20} = 19 с (expired не входит).
-      â = 6/13, t̂ = 0.1875, ĉ = 0.5, latency = 581/600, q ≈ 0.656, score ≈ 0.313,
-      health (answered &gt; 0) = 0.25 + 0.75 · 0.6875 = 0.765625.
-      Десять одних expired: availability = 0.30, health = 0.475.
-    </div>
+  <h2>Доли</h2>
+  <pre>E(q) = ½ × Σ(qⱼ − rⱼ)²
+improvementᵢ = E(before) − E(after assigning to i)</pre>
+  <p>Улучшения нормируются между текущими кандидатами в [0,1]. Вектор содержит всех настроенных провайдеров,
+    включая недоступных; их цели не перераспределяются. Fallback имеет цель 0 и не участвует в Ranker.
+    Активные цели count/volume должны суммироваться в 100%.</p>
 
-    <h2 id="window">Окно и история</h2>
-    <table>
-      <thead><tr><th>Шаг</th><th>Правило</th></tr></thead>
-      <tbody>
-        <tr><td>Посев CSV</td><td>Совместимые с текущими min/max и banks; хвост <code>max_observations</code>. Размер — overlay профиля, иначе глобальный блок.</td></tr>
-        <tr><td>Запись</td><td>Каждая симуляция, включая каскадный отказ. Индекс — <code>operation_id</code> внутри провайдера.</td></tr>
-        <tr><td>Причинность</td><td><code>created_at ≤</code> текущей, кроме того же <code>operation_id</code>. Совместимость bank/amount при чтении (и в отчёте).</td></tr>
-        <tr><td>Trim</td><td>Сначала settled; expired держим до status-check. Новейшая строка не выбрасывается.</td></tr>
-        <tr><td>Status-check</td><td>Перепись той же строки: cancelled→rejected. Timeout-latency сбрасывается (p90 не травится). Если строку уже вытолкнули — вставляем терминал заново.</td></tr>
-        <tr><td>Снимок</td><td>Ranker видит freeze_copy. Полный CSV не в знаменателе сессии.</td></tr>
-      </tbody>
-    </table>
-
-    <h2 id="yaml">YAML</h2>
-    <pre class="yaml">metrics:
-  window: { max_observations: 50, recent_observations: 10 }
-  smoothing:
-    prior_strength: 10.0
-    approval_prior: 0.5          # не conversion_24h
-    timeout_prior: 0.10
-    timeout_prior_strength: 5.0
-    segment_min_size: 5
-    segment_confidence_strength: 10.0
-  combination: weighted_sum
-  components:
-    approval_rate: { enabled: true, weight: 0.40 }
-    availability:  { enabled: true, weight: 0.25 }
-    acceptance:    { enabled: true, weight: 0.15 }
-    latency:       { enabled: true, weight: 0.20, bad_p90_sec: 600 }
-  multipliers:
-    health: { enabled: true, floor: 0.25, exponent: 1.0,
-              availability_weight: 0.60, acceptance_weight: 0.40 }
-
-# vipay / reliable_history:
-#   availability.weight: 0.40  (потом нормировка на сумму 1.15)
-#   health.exponent: 1.5</pre>
-    <table>
-      <thead><tr><th>Рычаг</th><th>Эффект</th></tr></thead>
-      <tbody>
-        <tr><td>выключить компонент</td><td>вес выпадает из нормировки</td></tr>
-        <tr><td>поднять exponent</td><td>недавние простои сильнее режут весь soft-счёт</td></tr>
-        <tr><td>опустить floor</td><td>больший штраф; 0 запрещён</td></tr>
-        <tr><td>уменьшить recent</td><td>health нервнее; historical_quality почти нет</td></tr>
-        <tr><td>увеличить α</td><td>короткое окно ближе к π = 0.5</td></tr>
-        <tr><td>увеличить segment_min_size</td><td>чаще provider-уровень</td></tr>
-      </tbody>
-    </table>
-
-    <h2 id="add">Новая метрика</h2>
-    <ol>
-      <li>Ключ и источник в <code>Routing::Metrics::Inputs</code> (session, catalog, window, runtime, operation).</li>
-      <li>Откуда берётся значение: поле каталога, счётчик сессии, компонента окна, runtime, операция.</li>
-      <li>Комбинация: дописать в <code>METRICS</code> существующей стратегии или класс в <code>SoftGoals::GOALS</code> + вес в YAML.</li>
-    </ol>
-    <p>
-      Не складывайте разнородные шкалы в один <code>weighted_sum</code>, если функция другая:
-      дефицит доли — не то же, что 2q − 1 окна. Функция комбинации и есть стратегия.
-      Hard-constraint по-прежнему отдельный слой: метрика может дублировать сигнал (RPM в load и в Intensity), но skip ≠ score.
-    </p>
-
-    <h2 id="guarantees">Гарантии</h2>
-    <ol>
-      <li>Hard важнее: низкий health не skip.</li>
-      <li>enabled health ≥ floor · base, если base &gt; 0.</li>
-      <li>Timeout-шторм не наследует <code>conversion_24h</code> в health.</li>
-      <li>Один исход — одна строка; поздний approve не держит timeout в p90.</li>
-      <li>Веса включённых компонент суммируются в 1; combination применяется в Catalog.</li>
-      <li>Неизвестный ключ YAML — ошибка загрузки.</li>
-      <li>Fallback и каскад: spacepayments вне смеси; отказ промежуточного портит его окно.</li>
-    </ol>
-    <p class="caption">lib/routing/metrics/*.rb, lib/routing/soft_goals/*.rb, ranker.rb, config/routing_policy.yml</p>
-  </main>
+  <h2>Отчёт и проверка</h2>
+  <p><code>provider_metrics</code> отдельно показывает initial conversion/timeouts/refusals/answered success/p90 и
+    final approved/rejected/unresolved. <code>conversion_backtest</code> последовательно прогнозирует результат до
+    добавления строки и сравнивает Brier score с фиксированным published prior.</p>
+  <div class="note">Brier-проверка использует только наблюдавшиеся попытки. Без исторических снимков
+    <code>conversion_24h</code> она не доказывает преимущество маршрутизации и не даёт контрфактических исходов.</div>
 </body>
 </html>
