@@ -40,12 +40,19 @@ module Routing
 
     attr_reader :providers, :history, :metrics
 
-    def initialize(providers, history: nil, metrics_config: nil)
+    def initialize(providers, history: nil, metrics_config: nil, policy: nil)
       Routing.assert(providers.is_a?(ProviderPool), "providers must be a ProviderPool")
       Routing.assert(history.nil? || history.is_a?(History), "runtime history must be Routing::History")
+      Routing.assert(policy.nil? || policy.is_a?(Policy), "runtime policy must be Routing::Policy")
       @providers = providers
       @history = history
-      @metrics = Metrics::Store.seed(history: history, providers: providers, config: metrics_config)
+      config_for = policy && ->(provider) { policy.metrics_for(provider) }
+      @metrics = Metrics::Store.seed(
+        history: history,
+        providers: providers,
+        config: metrics_config || policy&.metrics,
+        config_for: config_for
+      )
       @committed_counts = Hash.new(0)
       @pending_counts = Hash.new(0)
       @reservations = {}
@@ -123,7 +130,8 @@ module Routing
 
         Routing.assert(found.timed_out?, "reservation #{key} is not timed out")
         settle_active!(found, settlement)
-        rewrite_metric!(operation_id: operation_id, provider_name: provider_name, status: settlement)
+        rewrite_metric!(operation_id: operation_id, provider_name: provider_name, status: settlement,
+                        reservation: found)
         found
       end
     end
@@ -150,12 +158,19 @@ module Routing
 
     private
 
-    def rewrite_metric!(operation_id:, provider_name:, status:)
+    def rewrite_metric!(operation_id:, provider_name:, status:, reservation:)
       mapped = status == "approved" ? "approved" : "rejected"
-      @metrics.update_status(operation_id: operation_id, provider_name: provider_name, status: mapped)
+      @metrics.update_status(
+        operation_id: operation_id,
+        provider_name: provider_name,
+        status: mapped,
+        observation: metric_observation(reservation.operation, provider_name, mapped, nil)
+      )
     end
 
     def metric_observation(operation, provider_name, status, latency_sec)
+      Routing.assert(latency_sec.nil? || (latency_sec.is_a?(Numeric) && latency_sec >= 0),
+                     "latency_sec must be nil or non-negative")
       History::Observation.new(
         operation_id: operation.id,
         provider_name: provider_name,

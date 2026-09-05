@@ -35,11 +35,11 @@ RSpec.describe Routing::History do
       expect(quality.timeout_rate).to be_between(0, 1)
     end
 
-    it "uses the live conversion as a prior when a provider has no history", :aggregate_failures do
+    it "uses a neutral approval prior when a provider has no history", :aggregate_failures do
       provider = build_provider(payment_system: "newpay", conversion_24h: 0.80)
       quality = history.quality(provider: provider, operation: build_operation)
 
-      expect(quality).to have_attributes(scope: "live_prior", sample_size: 0, approval_rate: 0.80)
+      expect(quality).to have_attributes(scope: "live_prior", sample_size: 0, approval_rate: 0.5)
       expect(quality.score).to be_between(-1, 1)
     end
 

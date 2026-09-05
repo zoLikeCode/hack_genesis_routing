@@ -7,6 +7,7 @@ module Routing
         "window" => { "max_observations" => 50, "recent_observations" => 10 },
         "smoothing" => {
           "prior_strength" => 10.0,
+          "approval_prior" => 0.5,
           "timeout_prior" => 0.10,
           "timeout_prior_strength" => 5.0,
           "segment_min_size" => 5,

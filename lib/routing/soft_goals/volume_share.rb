@@ -4,6 +4,7 @@ module Routing
   module SoftGoals
     class VolumeShare
       KEY = "volume_share"
+      METRICS = %w[session.volume_share_pct catalog.volume_share_pct].freeze
 
       def self.call(provider, _operation, snapshot, _policy = nil)
         target = provider.volume_share_pct

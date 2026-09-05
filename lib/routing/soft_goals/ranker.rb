@@ -4,6 +4,8 @@ module Routing
   module SoftGoals
     class Ranker
       LAST_PRIORITY = 100
+      # Window-family metrics. Strategy scores are combinations of Metrics::Inputs;
+      # this list is the subset compared for metric_disagreement.
       METRIC_KEYS = Metrics::COMPONENTS
 
       def self.call(eligible:, operation:, snapshot:, policy:)
@@ -50,16 +52,20 @@ module Routing
       end
 
       def score_provider(provider, reason)
-        contributions = enabled_goals(provider).map do |goal|
-          goal.call(provider, @operation, @snapshot, @policy)
-        end
-        base = weighted_total(provider, contributions)
         vector = metric_vector(provider)
+        contributions = enabled_goals(provider).map { |goal| contribute(goal, provider, vector) }
+        base = weighted_total(provider, contributions)
         health = applied_health(provider, vector)
         Score.new(
           total: base * health, base_total: base, health: health,
           contributions: contributions, reason: reason, metrics: vector
         )
+      end
+
+      def contribute(goal, provider, vector)
+        return HistoricalQuality.from_vector(vector) if goal::KEY == METRIC_STRATEGY_KEY
+
+        goal.call(provider, @operation, @snapshot, @policy)
       end
 
       def weighted_total(provider, contributions)

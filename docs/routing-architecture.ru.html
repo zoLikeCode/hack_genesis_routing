@@ -54,6 +54,8 @@
     p { margin: 0 0 12px; }
     .lede { color: var(--muted); }
     .caption { color: var(--faint); font-size: 12px; margin-top: 8px; }
+    a { color: var(--accent); text-decoration: none; }
+    a:hover { text-decoration: underline; }
     code {
       font-family: ui-monospace, "Cascadia Code", Consolas, monospace;
       font-size: 0.92em;
@@ -168,8 +170,8 @@
 
     <div class="stats">
       <div class="stat"><b>8</b><span>Проверок hard-constraints</span></div>
-      <div class="stat"><b>8</b><span>Оценщиков soft-goals</span></div>
-      <div class="stat"><b>4+1</b><span>Метрик и health-множитель</span></div>
+      <div class="stat"><b>8</b><span>Стратегий — комбинаций метрик</span></div>
+      <div class="stat"><b>5</b><span>Источников метрик</span></div>
     </div>
 
     <h2>Исполнение одной операции</h2>
@@ -270,7 +272,7 @@
       <tbody>
         <tr><td>Входные сущности</td><td>Operation, Provider, ProviderPool, Policy</td><td>Типизированные записи из JSON/YAML. Политика хранит веса стратегий, профили, блок metrics и overlay профилей, имя fallback и зерно симуляции.</td></tr>
         <tr><td>Допуск</td><td>HardConstraints::*</td><td>Первая непройденная проверка останавливает провайдера. Статус, диапазон суммы, дневной лимит, in-progress count/amount, банк, маржа, реквизиты, RPM.</td></tr>
-        <tr><td>Оценка</td><td>SoftGoals::*, Metrics::*</td><td>Только допущенные основные провайдеры. Взвешенная сумма стратегий, затем множитель health. Ничья — по provider.priority, затем по имени. Fallback здесь не участвует.</td></tr>
+        <tr><td>Оценка</td><td>SoftGoals::*, Metrics::*</td><td>Только допущенные основные. Каждая стратегия комбинирует свои метрики; взвешенная сумма стратегий, затем множитель health. Ничья — по provider.priority, затем по имени. Fallback здесь не участвует.</td></tr>
         <tr><td>Выбор</td><td>Router, Selector</td><td>Router вызывает Filter, затем Ranker, затем Selector. Selector возвращает ranking.preferred. Если он nil, Router отдаёт hard-допустимый fallback.</td></tr>
         <tr><td>Оркестрация</td><td>Engine, RouteContext</td><td>Онлайн-инварианты (уникальный id, неубывающий created_at), цикл попыток, журнал attempts, сумма latency, запись метрик, сборка Decision.</td></tr>
         <tr><td>Состояние</td><td>RuntimeState, Reservation, Metrics::Store, счётчики Provider</td><td>Mutex и ревизия. Резерв атомарный: повторная проверка hard-constraints на живом провайдере. Окна попыток усечены по провайдеру.</td></tr>
@@ -297,7 +299,7 @@
       </section>
       <section>
         <h3>Soft-goals</h3>
-        <p class="lede">Каждый вклад в [-1, 1]. Политика умножает на вес профиля провайдера. Итоги сравнимы: веса поставленных профилей суммируются в 1.0.</p>
+        <p class="lede">Каждый вклад — комбинация метрик в [-1, 1]. Политика умножает на вес профиля провайдера. Итоги сравнимы: веса поставленных профилей суммируются в 1.0.</p>
         <table>
           <thead><tr><th>Цель</th><th>Оценка</th></tr></thead>
           <tbody>
@@ -355,12 +357,15 @@
       завершает текущий каскад до позднего status-check.
     </div>
 
-    <h2>Метрики провайдера</h2>
+    <h2>Окно качества</h2>
     <p>
-      Это не стратегии распределения и не hard-constraints. Окно — кольцевой буфер последних
+      Семейство метрик <code>window.*</code> — не hard-constraint. Окно — кольцевой буфер последних
       <code>metrics.window.max_observations</code> попыток провайдера (включая каскадные отказы).
-      Срез <code>recent_observations</code> кормит только health. CSV сеет окна совместимыми
+      Стратегия <code>historical_quality</code> комбинирует четыре компоненты; срез
+      <code>recent_observations</code> кормит только health. CSV сеет окна совместимыми
       строками; полный файл остаётся <code>history_baseline</code>.
+      Каталог всех метрик, формулы окна и YAML — в
+      <a href="metrics.ru.html">разборе метрик</a>.
     </p>
     <table>
       <thead><tr><th>Величина</th><th>Смысл</th><th>Роль</th></tr></thead>
@@ -376,6 +381,16 @@
       Веса компонентов и health задаются в <code>metrics:</code> и могут быть перекрыты в
       <code>profiles.&lt;name&gt;.metrics</code>. Конфликты метрик пишутся как
       <code>metric_disagreement</code> рядом с <code>goal_disagreement</code>.
+    </p>
+
+    <h2>Стратегии и метрики</h2>
+    <p>
+      Стратегия — комбинация метрик, не отдельная сущность рядом с ними.
+      <code>conversion</code> комбинирует одну метрику каталога; <code>count_share</code> — факт сессии и цель;
+      <code>historical_quality</code> — четыре метрики окна. Профиль комбинирует стратегии.
+      Health — ещё одна комбинация метрик окна, но множитель на весь <code>base</code>, не член суммы.
+      Новая величина, которая должна решать, регистрируется как метрика и попадает в <code>METRICS</code> стратегии.
+      Полный каталог — в <a href="metrics.ru.html">разборе метрик</a>.
     </p>
 
     <h2>Подключение стратегий</h2>
@@ -410,9 +425,12 @@
         <code>lower_soft_score</code>.
       </p>
       <p class="caption" style="margin:0">
-        Новая hard-проверка: добавить в <code>HardConstraints::CHECKS</code>. Новая soft-цель:
-        добавить в <code>SoftGoals::GOALS</code> и ключ в YAML. Новая метрика качества: ключ в
-        <code>metrics.components</code> и каталог, не новая стратегия. Engine не ветвится по именам стратегий.
+        Новая hard-проверка: <code>HardConstraints::CHECKS</code>.
+        Новая метрика: ключ в <code>Metrics::Inputs</code> и значение.
+        Чтобы она решала — <code>METRICS</code> существующей стратегии или класс в
+        <code>SoftGoals::GOALS</code> плюс вес YAML.
+        Компонента окна в <code>historical_quality</code>: <code>metrics.components</code> и Catalog.
+        Engine не ветвится по именам стратегий.
       </p>
     </div>
   </main>

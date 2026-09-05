@@ -4,6 +4,7 @@ module Routing
   module SoftGoals
     class Conversion
       KEY = "conversion"
+      METRICS = %w[catalog.conversion_24h].freeze
 
       def self.call(provider, _operation, _snapshot, _policy = nil)
         value = provider.conversion_24h

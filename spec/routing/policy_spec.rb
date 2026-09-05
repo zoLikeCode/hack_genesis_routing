@@ -75,6 +75,7 @@ RSpec.describe Routing::Policy do
 
     it "loads metrics from routing_policy.yml", :aggregate_failures do
       expect(policy.metrics.max_observations).to eq(50)
+      expect(policy.metrics.approval_prior).to eq(0.5)
       expect(policy.metrics_for("vipay").health.fetch("exponent")).to eq(1.5)
     end
   end

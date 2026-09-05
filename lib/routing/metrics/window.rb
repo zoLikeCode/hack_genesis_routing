@@ -27,13 +27,19 @@ module Routing
         self
       end
 
-      def rewrite_status(operation_id:, status:)
+      def rewrite_status(operation_id:, status:, latency_sec: :clear)
         ensure_mutable!
         Routing.assert(operation_id.is_a?(String) && !operation_id.empty?, "operation_id required")
         Routing.assert(History::STATUSES.include?(status), "unknown metric status #{status}")
         found = @index[operation_id]
-        replace(found, found.with(status: status)) unless found.nil?
-        self
+        return if found.nil?
+
+        next_latency = latency_sec == :clear ? nil : latency_sec
+        unless next_latency.nil?
+          Routing.assert(next_latency.is_a?(Numeric) && next_latency >= 0, "latency_sec must be non-negative")
+        end
+        replace(found, found.with(status: status, latency_sec: next_latency))
+        @index[operation_id]
       end
 
       def observations
@@ -67,10 +73,12 @@ module Routing
       end
 
       def trim!
-        extra = @observations.size - @max_observations
-        return unless extra.positive?
-
-        @observations.shift(extra).each { |dropped| @index.delete(dropped.operation_id) }
+        while @observations.size > @max_observations
+          droppable = @observations[0...-1]
+          drop_index = droppable.index { |row| row.status != "expired" } || 0
+          dropped = @observations.delete_at(drop_index)
+          @index.delete(dropped.operation_id)
+        end
       end
 
       def ensure_mutable!

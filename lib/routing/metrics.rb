@@ -2,6 +2,10 @@
 
 module Routing
   module Metrics
+    # A metric is an observable. Strategies combine metrics into a score.
+    # COMPONENTS are the window-quality family; Inputs lists every family.
+    # Ranker consumes the window vector twice: SoftGoals::HistoricalQuality
+    # (signed blend of COMPONENTS) and health (multiplier on the strategy mix).
     COMPONENTS = %w[approval_rate availability acceptance latency].freeze
     COMBINATIONS = %w[weighted_sum].freeze
     MULTIPLIERS = %w[health].freeze

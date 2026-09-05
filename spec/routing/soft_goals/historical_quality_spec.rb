@@ -20,4 +20,19 @@ RSpec.describe Routing::SoftGoals::HistoricalQuality do
 
     expect(contribution).to have_attributes(score: 0.0, reason: "soft_goal_neutral")
   end
+
+  it "turns a metric vector into the historical_quality strategy term" do
+    vector = Routing::Metrics::Catalog.call(
+      observations: [],
+      provider: provider,
+      operation: build_operation
+    )
+    contribution = described_class.from_vector(vector)
+
+    expect(contribution).to have_attributes(name: "historical_quality", score: vector.score)
+  end
+
+  it "is neutral when the metric vector is missing" do
+    expect(described_class.from_vector(nil)).to have_attributes(score: 0.0, reason: "soft_goal_neutral")
+  end
 end

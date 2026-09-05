@@ -21,7 +21,7 @@ module Routing
       @policy = policy
       apply_default_requests_per_minute_limit!
       @simulator = simulator || Simulator.new(seed: policy.simulation_seed)
-      @state = state || RuntimeState.new(providers, metrics_config: policy.metrics)
+      @state = state || RuntimeState.new(providers, metrics_config: policy.metrics, policy: policy)
       Routing.assert(@state.is_a?(RuntimeState), "state must be Routing::RuntimeState")
       Routing.assert(@state.providers.equal?(providers), "runtime state must own the provider pool")
       @status_checker = build_status_checker

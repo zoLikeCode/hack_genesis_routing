@@ -4,6 +4,7 @@ module Routing
   module SoftGoals
     class AmountBand
       KEY = "amount_band"
+      METRICS = %w[operation.amount catalog.limit_amount_max].freeze
 
       def self.call(provider, operation, _snapshot, _policy = nil)
         maximum = provider.limit_amount_max

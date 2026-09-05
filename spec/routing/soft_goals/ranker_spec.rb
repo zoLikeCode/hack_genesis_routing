@@ -88,6 +88,14 @@ RSpec.describe Routing::SoftGoals::Ranker do
     expect(metric_conflict_ranking.conflicts.map(&:kind)).to include("metric_disagreement")
   end
 
+  it "uses the metric vector as the historical_quality strategy term", :aggregate_failures do
+    result = quality_ranking
+    score = result.scores.fetch("vipay")
+
+    expect(score.contribution("historical_quality").score).to eq(score.metrics.score)
+    expect(score.total).to eq(score.base_total * score.health)
+  end
+
   def payflow_provider
     build_provider(payment_system: "payflow", traffic_percentage: 35, priority: 2,
                    conversion_24h: 0.91, volume_share_pct: 20,
@@ -158,6 +166,19 @@ RSpec.describe Routing::SoftGoals::Ranker do
       operation: build_operation,
       snapshot: empty_snapshot(metrics: store.snapshot),
       policy: build_policy("conversion" => { "enabled" => true, "weight" => 1.0 })
+    )
+  end
+
+  def quality_ranking
+    store = Routing::Metrics::Store.seed(history: nil, providers: Routing::ProviderPool.new([vipay]), config: nil)
+    3.times do |index|
+      store.record(build_observation(operation_id: "ok_#{index}", status: "approved"))
+    end
+    described_class.call(
+      eligible: [vipay],
+      operation: build_operation,
+      snapshot: empty_snapshot(metrics: store.snapshot),
+      policy: build_policy("historical_quality" => { "enabled" => true, "weight" => 1.0 })
     )
   end
 

@@ -4,6 +4,14 @@ module Routing
   module SoftGoals
     class LoadBalance
       KEY = "load_balance"
+      METRICS = %w[
+        runtime.in_progress_count
+        catalog.in_progress_count_limit
+        runtime.in_progress_amount
+        catalog.in_progress_amount_limit
+        runtime.request_count
+        catalog.requests_per_minute_limit
+      ].freeze
 
       def self.call(provider, operation, _snapshot, _policy = nil)
         utilizations = [

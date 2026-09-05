@@ -104,13 +104,34 @@ RSpec.describe Routing::RuntimeState do
     expect(state.metrics.observations_for("vipay").map(&:status)).to eq(%w[rejected])
   end
 
-  it "rewrites a timed-out metric after status-check settlement" do
+  it "rewrites a timed-out metric after status-check settlement", :aggregate_failures do
     reservation = reserve
     state.mark_timeout!(reservation)
     state.record_metric!(operation: operation, provider_name: "vipay", status: "expired", latency_sec: 40)
     state.resolve_timeout!(operation_id: operation.id, provider_name: provider.name, result: "approved")
 
-    expect(state.metrics.observations_for("vipay").first.status).to eq("approved")
+    row = state.metrics.observations_for("vipay").first
+    expect(row).to have_attributes(status: "approved", latency_sec: nil)
+  end
+
+  it "restores a trimmed timeout when status-check settles", :aggregate_failures do
+    tight = described_class.new(
+      pool,
+      metrics_config: { "window" => { "max_observations" => 1, "recent_observations" => 1 } }
+    )
+    reservation = tight.try_reserve!(provider, operation, expected_revision: tight.snapshot.revision).reservation
+    tight.mark_timeout!(reservation)
+    tight.record_metric!(operation: operation, provider_name: "vipay", status: "expired", latency_sec: 40)
+    tight.record_metric!(
+      operation: build_operation(operation_id: "op_other"),
+      provider_name: "vipay",
+      status: "expired",
+      latency_sec: 40
+    )
+    tight.resolve_timeout!(operation_id: operation.id, provider_name: provider.name, result: "approved")
+
+    restored = tight.metrics.observations_for("vipay").find { |row| row.operation_id == operation.id }
+    expect(restored).to have_attributes(status: "approved", latency_sec: nil)
   end
 
   it "rechecks hard constraints inside the reservation boundary", :aggregate_failures do

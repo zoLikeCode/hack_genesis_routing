@@ -95,6 +95,10 @@ module Routing
         smoothing.fetch("prior_strength")
       end
 
+      def approval_prior
+        smoothing.fetch("approval_prior")
+      end
+
       def timeout_prior
         smoothing.fetch("timeout_prior")
       end

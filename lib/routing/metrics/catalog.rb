@@ -3,7 +3,10 @@
 module Routing
   module Metrics
     class Catalog
+      include CatalogMath
+
       Stats = Data.define(:sample_size, :approved, :rejected, :expired, :p90_latency_sec)
+      ANSWERED = %w[approved rejected].freeze
 
       def self.call(observations:, provider:, operation:, config: nil)
         new(observations, provider, operation, config).call
@@ -34,7 +37,7 @@ module Routing
       end
 
       def summarize
-        rows = ordered(@observations)
+        rows = ordered(compatible_observations(@observations))
         return live_prior if rows.empty?
 
         overall = stats(rows)
@@ -64,16 +67,22 @@ module Routing
       end
 
       def relevant_observations
-        return @observations if @operation.nil?
-
         @observations.select do |observation|
           observation.provider_name == @provider.name &&
             precedes?(observation) && Metrics.compatible?(@provider, observation)
         end
       end
 
+      def compatible_observations(rows)
+        rows.select { |row| Metrics.compatible?(@provider, row) }
+      end
+
       def precedes?(observation)
-        @operation.created_at.nil? || observation.created_at < @operation.created_at
+        return true if @operation.nil?
+        return false if observation.operation_id == @operation.id
+        return true if @operation.created_at.nil?
+
+        observation.created_at <= @operation.created_at
       end
 
       def ordered(rows)
@@ -113,13 +122,22 @@ module Routing
       end
 
       def stats(observations)
+        latencies = answered_latencies(observations)
         Stats.new(
           sample_size: observations.size,
           approved: observations.count { |row| row.status == "approved" },
           rejected: observations.count { |row| row.status == "rejected" },
           expired: observations.count { |row| row.status == "expired" },
-          p90_latency_sec: percentile(observations.map(&:latency_sec), 0.90)
+          p90_latency_sec: latencies.empty? ? nil : percentile(latencies, 0.90)
         )
+      end
+
+      def answered_latencies(observations)
+        observations.filter_map do |row|
+          next unless ANSWERED.include?(row.status)
+
+          row.latency_sec
+        end
       end
 
       def percentile(values, percentile)
@@ -132,94 +150,23 @@ module Routing
         lower + ((upper - lower) * (rank - rank.floor))
       end
 
-      def blended_quality(segment, overall)
-        segment_score = quality_score(segment)
-        return segment_score if segment.sample_size == overall.sample_size
-
-        confidence = segment.sample_size / (segment.sample_size + @config.segment_confidence_strength)
-        (confidence * segment_score) + ((1.0 - confidence) * quality_score(overall))
-      end
-
-      def quality_score(stats)
-        weights = @config.normalized_component_weights
-        return 0.0 if weights.empty?
-
-        parts = {
-          "approval_rate" => smoothed_approval(stats),
-          "availability" => 1.0 - smoothed_timeout(stats),
-          "acceptance" => smoothed_acceptance(stats),
-          "latency" => latency_quality(stats)
-        }
-        weights.sum { |name, weight| weight * parts.fetch(name) }
-      end
-
-      def health_factor(stats)
-        cfg = @config.health
-        availability = 1.0 - smoothed_timeout(stats)
-        acceptance = smoothed_acceptance(stats)
-        blend = weighted_health(cfg, availability, acceptance)
-        floor = cfg.fetch("floor")
-        exponent = cfg.fetch("exponent")
-        floor + ((1.0 - floor) * (blend**exponent))
-      end
-
-      def weighted_health(cfg, availability, acceptance)
-        availability_weight = cfg.fetch("availability_weight").to_f
-        acceptance_weight = cfg.fetch("acceptance_weight").to_f
-        total = availability_weight + acceptance_weight
-        return 1.0 if total.zero?
-
-        ((availability_weight * availability) + (acceptance_weight * acceptance)) / total
-      end
-
-      def smoothed_approval(stats)
-        numerator = stats.approved + (@config.prior_strength * live_conversion)
-        numerator / (stats.sample_size + @config.prior_strength)
-      end
-
-      def smoothed_timeout(stats)
-        numerator = stats.expired + (@config.timeout_prior_strength * @config.timeout_prior)
-        numerator / (stats.sample_size + @config.timeout_prior_strength)
-      end
-
-      def smoothed_acceptance(stats)
-        answered = stats.approved + stats.rejected
-        numerator = stats.approved + (@config.prior_strength * live_conversion)
-        numerator / (answered + @config.prior_strength)
-      end
-
-      def latency_quality(stats)
-        (1.0 - (stats.p90_latency_sec / @config.bad_p90_sec)).clamp(0.0, 1.0)
-      end
-
-      def refusal_rate(stats)
-        stats.sample_size.zero? ? 0.0 : stats.rejected.to_f / stats.sample_size
-      end
-
-      def to_signed(raw)
-        ((2.0 * raw) - 1.0).clamp(-1.0, 1.0)
-      end
-
       def live_prior
-        synthetic = Stats.new(sample_size: 0, approved: 0, rejected: 0, expired: 0, p90_latency_sec: 0.0)
+        synthetic = Stats.new(sample_size: 0, approved: 0, rejected: 0, expired: 0, p90_latency_sec: nil)
         timeout = @config.timeout_prior
+        prior = @config.approval_prior
         Vector.new(
           score: to_signed(quality_score(synthetic)),
           sample_size: 0,
           scope: "live_prior",
-          approval_rate: live_conversion,
+          approval_rate: prior,
           availability: 1.0 - timeout,
-          acceptance: live_conversion,
+          acceptance: prior,
           latency: 1.0,
           health: health_factor(synthetic),
           timeout_rate: timeout,
           refusal_rate: 0.0,
           p90_latency_sec: nil
         )
-      end
-
-      def live_conversion
-        @provider.conversion_24h.nil? ? 0.5 : @provider.conversion_24h.to_f
       end
     end
   end

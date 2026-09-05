@@ -4,6 +4,12 @@ module Routing
   module SoftGoals
     class FinancialObligation
       KEY = "financial_obligation"
+      METRICS = %w[
+        runtime.daily_approved_amount
+        catalog.daily_turnover_min
+        catalog.daily_turnover_max
+        operation.amount
+      ].freeze
       SOFT_MAX_START = 0.8
 
       def self.call(provider, operation, _snapshot, _policy = nil)

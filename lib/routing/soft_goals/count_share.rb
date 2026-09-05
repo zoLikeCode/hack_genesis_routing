@@ -4,6 +4,7 @@ module Routing
   module SoftGoals
     class CountShare
       KEY = "count_share"
+      METRICS = %w[session.count_share_pct catalog.traffic_percentage].freeze
 
       def self.call(provider, _operation, snapshot, _policy = nil)
         actual = snapshot.count_share_pct(provider.name)

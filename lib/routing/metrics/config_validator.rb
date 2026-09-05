@@ -6,8 +6,10 @@ module Routing
       ROOT_KEYS = %w[window smoothing combination components multipliers].freeze
       WINDOW_KEYS = %w[max_observations recent_observations].freeze
       SMOOTHING_KEYS = %w[
-        prior_strength timeout_prior timeout_prior_strength segment_min_size segment_confidence_strength
+        prior_strength approval_prior timeout_prior timeout_prior_strength
+        segment_min_size segment_confidence_strength
       ].freeze
+      UNIT_INTERVAL_KEYS = %w[approval_prior timeout_prior].freeze
       COMPONENT_KEYS = %w[enabled weight bad_p90_sec].freeze
       HEALTH_KEYS = %w[enabled floor exponent availability_weight acceptance_weight].freeze
 
@@ -81,7 +83,12 @@ module Routing
         mapping!("smoothing", raw)
         reject_unknown!(stringify(raw).keys, SMOOTHING_KEYS, "metrics.smoothing")
         stringify(raw).each do |key, value|
-          validate_non_negative_number!(value, "metrics.smoothing.#{key}", required: required)
+          field = "metrics.smoothing.#{key}"
+          if UNIT_INTERVAL_KEYS.include?(key)
+            validate_unit_interval!(value, field, required: required)
+          else
+            validate_non_negative_number!(value, field, required: required)
+          end
         end
       end
       private_class_method :validate_smoothing!
@@ -160,6 +167,14 @@ module Routing
         input_error!("metrics.multipliers.health.floor must be in (0, 1]")
       end
       private_class_method :validate_floor!
+
+      def self.validate_unit_interval!(value, field, required:)
+        return if value.nil? && !required
+        return if value.is_a?(Numeric) && value >= 0 && value <= 1.0
+
+        input_error!("#{field} must be in [0, 1]")
+      end
+      private_class_method :validate_unit_interval!
 
       def self.validate_positive_int!(value, field, required:)
         return if value.nil? && !required

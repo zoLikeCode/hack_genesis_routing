@@ -15,6 +15,7 @@ metrics:
     recent_observations: 10
   smoothing:
     prior_strength: 10.0
+    approval_prior: 0.5
     timeout_prior: 0.10
     timeout_prior_strength: 5.0
     segment_min_size: 5
@@ -42,6 +43,18 @@ metrics:
       availability_weight: 0.60
       acceptance_weight: 0.40
 
+# Nested combinations:
+#   metric   → observable (session, catalog, window, runtime, operation)
+#   strategy → combination of metrics → score in [-1, 1]
+#   profile  → combination of strategies → base = Σ w_strategy × s_strategy
+#   total    = base × health   (health is also a metric combination)
+#
+# Window components under metrics: are metrics too; historical_quality is the
+# strategy that combines them. conversion still uses conversion_24h.
+# To add a metric that should affect selection: register it in
+# Metrics::Inputs, produce the value, then list it on a SoftGoals::*::METRICS
+# (existing strategy or a new class on GOALS).
+#
 # There are two mutually exclusive ways to select strategies:
 # 1. Enable one or more strategies directly and do not select any profiles.
 # 2. Disable every direct strategy, select a default profile, and optionally

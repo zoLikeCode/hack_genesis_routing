@@ -46,19 +46,31 @@ The application rejects unknown profiles and any attempt to mix profiles with di
 uses history-calibrated provider profiles: `reliable_history` for `vipay`, `controlled_share` for `payflow`, and
 `capacity_obligation` for `quickpay`. The `historical_only` profile demonstrates the single-strategy mode.
 
+A **metric** is an observable (session, catalog, window, runtime, or operation). A **strategy** is a named
+combination of those metrics into a score in [-1, 1] — one metric is enough (`conversion` is clamp(`conversion_24h`)).
+A **profile** is a weighted combination of strategies. Window quality is one metric family; `historical_quality` is
+the strategy that combines it. **Health** is also a metric combination, applied after the mix:
+`total = (Σ w_strategy × s_strategy) × health`.
+
+To add a metric that should affect selection: register it in `Routing::Metrics::Inputs`, produce the value, then list
+it on an existing `SoftGoals::*::METRICS` (or add a strategy class to `GOALS` and a YAML weight).
+
 `historical_quality` reads a per-provider truncated attempt window, not the raw CSV as a whole. The mix is configured under
 `metrics:` in `config/routing_policy.yml` and may be overlaid per profile. Components are **availability** (`1 - timeout_rate`),
-**acceptance** (approvals among answered attempts), **approval_rate**, and **latency**. They are not extra strategies: stuffing
-timeouts and refusals into one “uptime” percentage would collapse into conversion.
+**acceptance** (approvals among answered attempts), **approval_rate**, and **latency** (p90 of answered attempts with a known
+latency). Keep them separate: stuffing timeouts and refusals into one “uptime” percentage would collapse into conversion.
 
-After the weighted strategy total, Ranker multiplies by **health** — a floored blend of availability and acceptance. Health
-never excludes a provider; it only scales the score. `conversion` still uses `conversion_24h` from `providers.json` (a slow
-published KPI). Windows are the fast local evidence, seeded from the most recent compatible CSV rows and updated on every
-attempt, including cascade refusals. A later status-check rewrites an `expired` row instead of appending a second one.
+After the weighted strategy total, Ranker multiplies by **health** — a floored blend of availability and acceptance. If the
+recent slice has no answered attempts, health uses availability only, so a timeout storm cannot borrow `conversion_24h`.
+Health never excludes a provider; it only scales the score. `conversion` still uses `conversion_24h` from `providers.json`
+(a slow published KPI). Window smoothing uses `metrics.smoothing.approval_prior` (default 0.5), not that KPI. Windows are
+seeded from the most recent compatible CSV rows and updated on every attempt, including cascade refusals. A later status-check
+rewrites an `expired` row instead of appending a second one, and drops the timeout wait from p90. Pending timeouts are kept
+in the ring ahead of settled rows; if a row was already trimmed, settlement re-inserts it.
 
 `historical_quality` still prefers a sufficiently large provider + bank + amount segment, then falls back through bank, amount,
-and provider-level samples. Small segments shrink toward the provider baseline; `conversion_24h` is the live prior when the
-window is empty. Only rows older than the current operation and compatible with current bank/amount rules are eligible.
+and provider-level samples. Small segments shrink toward the provider baseline; an empty window is the configured approval
+prior. Rows at the current `created_at` from other operations are eligible; the current `operation_id` is not.
 
 `Routing::Router` always applies every hard constraint before ranking. The eligible fallback is kept outside soft-goal
 ranking and is selected only when no untried external provider remains.

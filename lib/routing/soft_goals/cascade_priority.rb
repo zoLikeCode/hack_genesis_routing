@@ -4,6 +4,7 @@ module Routing
   module SoftGoals
     class CascadePriority
       KEY = "cascade_priority"
+      METRICS = %w[catalog.priority].freeze
 
       def self.call(provider, _operation, _snapshot, _policy = nil)
         priority = provider.priority
