@@ -102,7 +102,7 @@ profiles:
     strategies: { amount_band: { weight: 1.0 } }
 
 concurrency:
-  enabled: false
+  enabled: true
   executor: fiber_pool
   fallback_worker_limit: 4
   max_workers_per_provider: null
