@@ -161,5 +161,5 @@ ruby scripts/validate_10.rb routing_decisions_test.json
 bundle exec rake          # RSpec + RuboCop
 bundle exec rspec
 bundle exec rubocop
-bundle exec rubocop -A    # исправить то, что RuboCop умеет поправить сам
+bundle exec rubocop -A    # исправить то, что RuboCop может поправить сам
 ```
