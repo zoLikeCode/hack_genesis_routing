@@ -14,6 +14,39 @@ module Routing
       NEGATIVE_MARGIN = "negative_margin"
       NO_REQUISITES = "no_requisites"
       RATE_LIMIT_EXCEEDED = "rate_limit_exceeded"
+      NO_DISPATCH_SLOT = "no_dispatch_slot"
+      CIRCUIT_BREAKER_OPEN = "circuit_breaker_open"
+
+      DURABLE = [
+        PROVIDER_INACTIVE,
+        AMOUNT_BELOW_MINIMUM,
+        AMOUNT_EXCEEDS_LIMIT,
+        BANK_NOT_IN_LIST,
+        BANK_EXCLUDED,
+        NEGATIVE_MARGIN
+      ].freeze
+
+      CAPACITY = [
+        DAILY_LIMIT_EXCEEDED,
+        IN_PROGRESS_COUNT_EXCEEDED,
+        IN_PROGRESS_AMOUNT_EXCEEDED,
+        NO_REQUISITES,
+        RATE_LIMIT_EXCEEDED,
+        NO_DISPATCH_SLOT,
+        CIRCUIT_BREAKER_OPEN
+      ].freeze
+
+      def self.capacity?(reason)
+        CAPACITY.include?(reason)
+      end
+
+      def self.waitable?(reason)
+        capacity?(reason) && reason != CIRCUIT_BREAKER_OPEN
+      end
+
+      def self.durable?(reason)
+        DURABLE.include?(reason)
+      end
     end
   end
 end

@@ -109,7 +109,10 @@ RSpec.describe Routing::History do
         bank: bank,
         initial_status: status,
         status: status,
-        latency_sec: 30
+        latency_sec: 30,
+        attempted_at: Time.iso8601(id_time),
+        admission_sequence: nil,
+        completed_at: Time.iso8601(id_time)
       )
     end
   end

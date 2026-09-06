@@ -118,6 +118,7 @@ RSpec.describe Routing::Report do
     operation = build_operation
     state = Routing::RuntimeState.new(pool)
     reservation = state.try_reserve!(vipay, operation, expected_revision: state.snapshot.revision).reservation
+    state.mark_dispatching!(reservation, at: operation.created_at)
     state.mark_timeout!(reservation)
     state.resolve_timeout!(operation_id: operation.id, provider_name: vipay.name, result: "cancelled")
     resolved_report = described_class.call(

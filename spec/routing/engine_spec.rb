@@ -88,6 +88,7 @@ RSpec.describe Routing::Engine do
       decision = engine.call.first
 
       expect(decision).to have_attributes(selected_provider: "vipay", simulated_result: "expired")
+      expect(decision).to be_provisional
       expect(decision.attempts.count { |attempt| attempt.decision == "selected" }).to eq(1)
       expect(decision.attempts.last.details).to include("timeout reservation retained")
       expect(engine.state.reservations.first.status).to eq("timed_out")
@@ -248,20 +249,21 @@ RSpec.describe Routing::Engine do
       )
     end
 
-    it "releases a reservation when the provider client raises", :aggregate_failures do
+    it "holds an ambiguous transport error as a timeout without cascading", :aggregate_failures do
       providers = two_primary_pool
       simulator = Object.new
       simulator.define_singleton_method(:call) { |_provider| raise IOError, "provider unavailable" }
+      simulator.define_singleton_method(:status) { |*, **| { result: "pending" } }
 
-      expect do
-        described_class.call(
-          operations: [build_operation],
-          providers: providers,
-          policy: build_policy,
-          simulator: simulator
-        )
-      end.to raise_error(IOError, "provider unavailable")
-      expect(providers.fetch("vipay")).to have_attributes(in_progress_count: 0, daily_reserved_amount: 0)
+      decision = described_class.call(
+        operations: [build_operation],
+        providers: providers,
+        policy: build_policy,
+        simulator: simulator
+      ).first
+
+      expect(decision.simulated_result).to eq("expired")
+      expect(providers.fetch("vipay")).to have_attributes(in_progress_count: 1, daily_reserved_amount: 15_000)
     end
 
     it "sends a stable attempt idempotency key to keyword-aware provider clients" do

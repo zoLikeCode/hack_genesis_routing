@@ -33,8 +33,17 @@ module Routing
           "bank" => observation.bank,
           "initial_status" => observation.initial_status,
           "status" => observation.status,
-          "latency_sec" => observation.latency_sec
+          "latency_sec" => observation.latency_sec,
+          "attempted_at" => serialize_time(observation.attempted_at),
+          "admission_sequence" => observation.admission_sequence,
+          "completed_at" => serialize_time(observation.completed_at)
         }
+      end
+
+      def serialize_time(value)
+        return if value.nil?
+
+        value.is_a?(Time) ? value.iso8601 : value
       end
     end
   end

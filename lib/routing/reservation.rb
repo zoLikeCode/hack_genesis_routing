@@ -2,11 +2,12 @@
 
 module Routing
   class Reservation
-    ACTIVE_STATUSES = %w[pending timed_out].freeze
+    ACTIVE_STATUSES = %w[reserved dispatching timed_out].freeze
     TERMINAL_STATUSES = %w[approved rejected].freeze
     STATUSES = (ACTIVE_STATUSES + TERMINAL_STATUSES).freeze
 
-    attr_reader :idempotency_key, :operation_id, :provider_name, :amount, :created_at, :status, :operation
+    attr_reader :idempotency_key, :operation_id, :provider_name, :amount, :created_at, :status, :operation,
+                :admission_sequence
 
     def initialize(operation:, provider_name:)
       Routing.assert(operation.is_a?(Operation), "reservation requires Routing::Operation")
@@ -17,23 +18,40 @@ module Routing
       @amount = operation.amount
       @created_at = operation.created_at
       @idempotency_key = "#{operation.id}:#{provider_name}"
-      @status = "pending"
+      @status = "reserved"
+      @admission_sequence = nil
     end
 
     def active?
       ACTIVE_STATUSES.include?(status)
     end
 
+    def reserved?
+      status == "reserved"
+    end
+
+    def dispatching?
+      status == "dispatching"
+    end
+
     def timed_out?
       status == "timed_out"
     end
 
+    def mark_dispatching!(admission_sequence:)
+      Routing.assert(admission_sequence.is_a?(Integer) && admission_sequence.positive?,
+                     "admission_sequence must be a positive integer")
+      transition!("dispatching", from: "reserved")
+      @admission_sequence = admission_sequence
+      self
+    end
+
     def mark_timed_out!
-      transition!("timed_out", from: "pending")
+      transition!("timed_out", from: "dispatching")
     end
 
     def approve!
-      transition!("approved", from: ACTIVE_STATUSES)
+      transition!("approved", from: %w[dispatching timed_out])
     end
 
     def reject!
@@ -48,6 +66,7 @@ module Routing
         "amount" => amount,
         "created_at" => created_at&.iso8601,
         "status" => status,
+        "admission_sequence" => admission_sequence,
         "operation" => operation.to_h
       }
     end

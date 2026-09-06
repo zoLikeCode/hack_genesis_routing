@@ -64,21 +64,6 @@ module Routing
           details: "terminal status-check rejected payout; reservation released"
         )
       end
-
-      def exclude_open_circuits!(context)
-        @circuit_breaker.open_provider_names.each do |provider_name|
-          next if context.attempted.include?(provider_name)
-
-          context.add_attempt!(
-            skip_attempt(provider_name, CIRCUIT_BREAKER_OPEN, "unresolved payout threshold reached")
-          )
-          context.mark_attempted!(provider_name)
-        end
-      end
-
-      def persist_runtime!
-        @runtime_store&.save(state: @state, status_checker: @status_checker)
-      end
     end
   end
 end

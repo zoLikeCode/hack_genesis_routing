@@ -82,7 +82,14 @@ module Routing
       end
 
       def ordered(rows)
-        rows.each_with_index.sort_by { |row, index| [row.created_at, index] }.map(&:first)
+        rows.each_with_index.sort_by { |row, index| attempt_key(row, index) }.map(&:first)
+      end
+
+      def attempt_key(row, index)
+        sequence = row.admission_sequence
+        return [0, sequence] unless sequence.nil?
+
+        [1, row.created_at.to_f, index]
       end
 
       def reference_time

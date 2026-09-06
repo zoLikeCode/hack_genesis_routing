@@ -7,7 +7,8 @@ module Routing
   class History
     Observation = Data.define(
       :operation_id, :provider_name, :created_at, :amount, :bank,
-      :initial_status, :status, :latency_sec
+      :initial_status, :status, :latency_sec,
+      :attempted_at, :admission_sequence, :completed_at
     )
 
     STATUSES = %w[approved rejected expired].freeze
@@ -59,24 +60,28 @@ module Routing
     private_class_method :read
 
     def self.parse(table)
-      table.map { |row| observation_from(row) }
+      table.each_with_index.map { |row, index| observation_from(row, index) }
     end
     private_class_method :parse
 
-    def self.observation_from(row)
+    def self.observation_from(row, index)
       name = row["payment_system"]
       input_error!("payment_system is required") if name.nil? || name.empty?
       status = row["status"]
       input_error!("unknown history status #{status}") unless STATUSES.include?(status)
+      created_at = timestamp(row["created_at"])
       Observation.new(
         operation_id: required_text(row["operation_id"], "operation_id"),
         provider_name: name,
-        created_at: timestamp(row["created_at"]),
+        created_at: created_at,
         amount: number(row["amount"], "amount"),
         bank: row["bank"],
         initial_status: status,
         status: status,
-        latency_sec: optional_number(row["latency_sec"], "latency_sec")
+        latency_sec: optional_number(row["latency_sec"], "latency_sec"),
+        attempted_at: created_at,
+        admission_sequence: index + 1,
+        completed_at: created_at
       )
     end
     private_class_method :observation_from

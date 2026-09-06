@@ -12,17 +12,18 @@ module Routing
       end
     end
 
-    def self.call(operation:, providers:, snapshot:, policy:, attempted: [])
-      new(operation, providers, snapshot, policy, attempted).call
+    def self.call(operation:, providers:, snapshot:, policy:, attempted: [], temporarily_excluded: [])
+      new(operation, providers, snapshot, policy, attempted, temporarily_excluded).call
     end
 
-    def initialize(operation, providers, snapshot, policy, attempted)
+    def initialize(operation, providers, snapshot, policy, attempted, temporarily_excluded)
       @operation = operation
       @providers = normalize_providers(providers)
       @snapshot = snapshot
       @policy = policy
       validate!
-      @attempted = normalize_attempted(attempted)
+      @attempted = normalize_names(attempted, "attempted")
+      @temporarily_excluded = normalize_names(temporarily_excluded, "temporarily_excluded")
     end
 
     def call
@@ -55,14 +56,14 @@ module Routing
       providers.to_a
     end
 
-    def normalize_attempted(attempted)
-      Routing.assert(attempted.respond_to?(:to_a), "attempted must be enumerable")
-      names = attempted.to_a
-      Routing.assert(names.all? { |name| name.is_a?(String) && !name.empty? },
-                     "attempted provider names must be non-empty strings")
-      unknown = names.uniq - @providers.map(&:name)
-      Routing.assert(unknown.empty?, "attempted contains unknown providers: #{unknown.join(', ')}")
-      names.uniq.freeze
+    def normalize_names(names, label)
+      Routing.assert(names.respond_to?(:to_a), "#{label} must be enumerable")
+      list = names.to_a
+      Routing.assert(list.all? { |name| name.is_a?(String) && !name.empty? },
+                     "#{label} provider names must be non-empty strings")
+      unknown = list.uniq - @providers.map(&:name)
+      Routing.assert(unknown.empty?, "#{label} contains unknown providers: #{unknown.join(', ')}")
+      list.uniq.freeze
     end
 
     def validate!
@@ -73,7 +74,8 @@ module Routing
     end
 
     def remaining_providers
-      @providers.reject { |provider| @attempted.include?(provider.name) }
+      excluded = @attempted + @temporarily_excluded
+      @providers.reject { |provider| excluded.include?(provider.name) }
     end
   end
 end

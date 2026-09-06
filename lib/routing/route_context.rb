@@ -2,17 +2,23 @@
 
 module Routing
   class RouteContext
-    attr_reader :attempts, :attempted, :total_latency
+    attr_reader :attempts, :attempted, :temporarily_excluded, :total_latency
 
-    def initialize(attempts: [], attempted: [], total_latency: 0)
+    def initialize(attempts: [], attempted: [], temporarily_excluded: [], total_latency: 0)
       Routing.assert(attempts.is_a?(Array) && attempts.all?(HardConstraints::Attempt),
                      "route context attempts must be Attempt objects")
       Routing.assert(attempted.is_a?(Array) && attempted.all? { |name| name.is_a?(String) && !name.empty? },
                      "route context attempted providers must be non-empty strings")
+      Routing.assert(
+        temporarily_excluded.is_a?(Array) &&
+          temporarily_excluded.all? { |name| name.is_a?(String) && !name.empty? },
+        "route context temporarily excluded providers must be non-empty strings"
+      )
       Routing.assert(total_latency.is_a?(Numeric) && total_latency >= 0,
                      "route context latency must be non-negative")
       @attempts = attempts.dup
       @attempted = attempted.uniq
+      @temporarily_excluded = temporarily_excluded.uniq
       @total_latency = total_latency
     end
 
@@ -33,6 +39,15 @@ module Routing
     def mark_attempted!(provider_name)
       Routing.assert(provider_name.is_a?(String) && !provider_name.empty?, "provider name required")
       @attempted |= [provider_name]
+    end
+
+    def exclude_temporarily!(provider_name)
+      Routing.assert(provider_name.is_a?(String) && !provider_name.empty?, "provider name required")
+      @temporarily_excluded |= [provider_name]
+    end
+
+    def clear_temporarily_excluded!
+      @temporarily_excluded = []
     end
 
     def add_latency!(latency)

@@ -39,6 +39,11 @@ module Routing
 
     def define_options(opts, options)
       opts.banner = "Usage: bin/route [options]"
+      add_path_options(opts, options)
+      add_flag_options(opts, options)
+    end
+
+    def add_path_options(opts, options)
       opts.on("--providers PATH", "providers.json") { |value| options[:providers] = value }
       opts.on("--queue PATH", "operations_queue.json") { |value| options[:queue] = value }
       opts.on("--history PATH", "operations_history.csv") { |value| options[:history] = value }
@@ -46,6 +51,12 @@ module Routing
       opts.on("--decisions PATH", "output routing_decisions JSON") { |value| options[:decisions_out] = value }
       opts.on("--report PATH", "output routing_report JSON") { |value| options[:report_out] = value }
       opts.on("--runtime PATH", "output durable runtime state JSON") { |value| options[:runtime_out] = value }
+    end
+
+    def add_flag_options(opts, options)
+      opts.on("--concurrent", "Overlap provider I/O using the fiber executor") do
+        options[:concurrent] = true
+      end
       opts.on("-h", "--help", "Show help") do
         puts opts
         exit 0
@@ -59,11 +70,22 @@ module Routing
       history = History.load(options[:history]) if options[:history] && File.exist?(options[:history])
       state = RuntimeState.new(providers, history: history, metrics_config: policy.metrics, policy: policy)
       runtime_store = RuntimeStore.new(options[:runtime_out])
-      engine = Engine.new(operations, providers, policy, state: state, runtime_store: runtime_store)
+      engine = Engine.new(
+        operations, providers, policy,
+        state: state,
+        runtime_store: runtime_store,
+        **engine_options(options)
+      )
       decisions = engine.call
       report = build_report(engine, decisions, operations, policy, history)
       write_outputs(options, decisions, report)
       0
+    end
+
+    def engine_options(options)
+      return {} unless options.key?(:concurrent)
+
+      { concurrent: options[:concurrent] }
     end
 
     def build_report(engine, decisions, operations, policy, history)

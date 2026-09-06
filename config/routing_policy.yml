@@ -100,3 +100,12 @@ profiles:
     strategies: { cascade_priority: { weight: 1.0 } }
   only_amount_band:
     strategies: { amount_band: { weight: 1.0 } }
+
+concurrency:
+  enabled: false
+  executor: fiber_pool
+  fallback_worker_limit: 4
+  max_workers_per_provider: null
+  status_worker_limit: 8
+  persist_debounce_ms: 50
+  event_log: false

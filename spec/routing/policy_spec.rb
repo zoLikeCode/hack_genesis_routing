@@ -41,6 +41,16 @@ RSpec.describe Routing::Policy do
     it "loads status-check settings" do
       expect(policy.status_check).to include("enabled" => true, "initial_delay_sec" => 5, "max_attempts" => 5)
     end
+
+    it "defaults concurrent execution off" do
+      expect(policy.concurrency).to include("enabled" => false, "executor" => "fiber_pool")
+    end
+  end
+
+  it "defaults concurrency off when the YAML key is missing" do
+    policy = described_class.new("strategies" => { "cascade_priority" => { "enabled" => true, "weight" => 1.0 } })
+
+    expect(policy.concurrency_enabled?).to be(false)
   end
 
   it "normalizes enabled direct strategies", :aggregate_failures do

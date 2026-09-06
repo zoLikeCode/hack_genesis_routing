@@ -6,18 +6,28 @@ module Routing
 
     attr_reader :operation_id, :selected_provider, :attempts, :simulated_result, :latency_sec
 
-    def initialize(operation_id:, selected_provider:, attempts:, simulated_result:, latency_sec:)
+    def initialize(operation_id:, selected_provider:, attempts:, simulated_result:, latency_sec:, final: true)
       Routing.assert(operation_id.is_a?(String) && !operation_id.empty?, "operation_id required")
       Routing.assert(selected_provider.is_a?(String) && !selected_provider.empty?, "selected_provider required")
       Routing.assert(attempts.is_a?(Array) && attempts.all?(HardConstraints::Attempt),
                      "attempts must be Attempt objects")
       Routing.assert(RESULTS.include?(simulated_result), "unknown simulated_result #{simulated_result}")
       Routing.assert(latency_sec.is_a?(Numeric), "latency_sec must be numeric")
+      Routing.assert([true, false].include?(final), "final must be true or false")
       @operation_id = operation_id
       @selected_provider = selected_provider
       @attempts = attempts
       @simulated_result = simulated_result
       @latency_sec = latency_sec
+      @final = final
+    end
+
+    def final?
+      @final
+    end
+
+    def provisional?
+      !@final
     end
 
     def to_h

@@ -20,6 +20,16 @@ module Routing
       @mutex = Mutex.new
     end
 
+    def take_due(now)
+      claim_due(now)
+    end
+
+    def run_task(task, now)
+      totals = empty_run.merge("checked" => 1)
+      process(task, now, totals)
+      totals
+    end
+
     def schedule(reservation, timed_out_at:)
       return unless enabled?
 
@@ -51,6 +61,12 @@ module Routing
     def next_check_at
       @mutex.synchronize do
         @tasks.values.select(&:scheduled?).filter_map(&:next_check_at).min
+      end
+    end
+
+    def active?
+      @mutex.synchronize do
+        @tasks.values.any? { |task| StatusCheckTask::ACTIVE_STATUSES.include?(task.status) }
       end
     end
 

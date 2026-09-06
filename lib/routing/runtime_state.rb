@@ -57,6 +57,7 @@ module Routing
       @pending_counts = Hash.new(0)
       @reservations = {}
       @revision = 0
+      @admission_sequence = 0
       @mutex = Mutex.new
     end
 
@@ -101,6 +102,28 @@ module Routing
       end
     end
 
+    def mark_dispatching!(reservation, at:)
+      Routing.assert(reservation.is_a?(Reservation), "reservation must be Routing::Reservation")
+      @mutex.synchronize do
+        stored = active_reservation!(reservation)
+        Routing.assert(stored.reserved?, "reservation #{stored.idempotency_key} is not reserved")
+        @admission_sequence += 1
+        stored.mark_dispatching!(admission_sequence: @admission_sequence)
+        @providers.fetch(stored.provider_name).record_dispatch!(at) unless at.nil?
+        bump_revision!
+        stored
+      end
+    end
+
+    def drop_reservation!(reservation)
+      Routing.assert(reservation.is_a?(Reservation), "reservation must be Routing::Reservation")
+      @mutex.synchronize do
+        stored = active_reservation!(reservation)
+        Routing.assert(stored.reserved?, "can only drop a reserved reservation")
+        settle_active!(stored, "rejected")
+      end
+    end
+
     def approve!(reservation)
       settle!(reservation, "approved")
     end
@@ -139,7 +162,7 @@ module Routing
       validate_metric!(operation, reservation.provider_name, status, latency_sec)
       @mutex.synchronize do
         stored = active_reservation!(reservation)
-        @metrics.record(metric_observation(operation, stored.provider_name, status, latency_sec))
+        @metrics.record(metric_observation(operation, stored, status, latency_sec))
         if status == "expired"
           stored.mark_timed_out!
           bump_revision!
@@ -157,7 +180,7 @@ module Routing
     def record_metric!(operation:, provider_name:, status:, latency_sec:)
       validate_metric!(operation, provider_name, status, latency_sec)
       @mutex.synchronize do
-        @metrics.record(metric_observation(operation, provider_name, status, latency_sec))
+        @metrics.record(metric_observation_direct(operation, provider_name, status, latency_sec))
         bump_revision!
       end
     end
@@ -186,10 +209,28 @@ module Routing
                      "latency_sec must be nil or non-negative")
     end
 
-    def metric_observation(operation, provider_name, status, latency_sec)
+    def metric_observation(operation, reservation, status, latency_sec)
+      History::Observation.new(
+        **observation_fields(operation, reservation.provider_name, status, latency_sec),
+        attempted_at: operation.created_at || Time.at(0),
+        admission_sequence: reservation.admission_sequence,
+        completed_at: operation.created_at
+      )
+    end
+
+    def metric_observation_direct(operation, provider_name, status, latency_sec)
+      History::Observation.new(
+        **observation_fields(operation, provider_name, status, latency_sec),
+        attempted_at: operation.created_at || Time.at(0),
+        admission_sequence: nil,
+        completed_at: operation.created_at
+      )
+    end
+
+    def observation_fields(operation, provider_name, status, latency_sec)
       Routing.assert(latency_sec.nil? || (latency_sec.is_a?(Numeric) && latency_sec >= 0),
                      "latency_sec must be nil or non-negative")
-      History::Observation.new(
+      {
         operation_id: operation.id,
         provider_name: provider_name,
         created_at: operation.created_at || Time.at(0),
@@ -198,7 +239,7 @@ module Routing
         initial_status: status,
         status: status,
         latency_sec: latency_sec
-      )
+      }
     end
 
     def create_reservation(operation, provider)

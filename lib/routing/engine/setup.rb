@@ -17,6 +17,8 @@ module Routing
           @providers, metrics_config: @policy.metrics, policy: @policy
         )
         @runtime_store = options[:runtime_store]
+        @concurrent = options.fetch(:concurrent) { @policy.concurrency_enabled? }
+        Routing.assert([true, false].include?(@concurrent), "concurrent must be true or false")
         Routing.assert(@runtime_store.nil? || @runtime_store.is_a?(RuntimeStore),
                        "runtime_store must be Routing::RuntimeStore")
         Routing.assert(@state.is_a?(RuntimeState), "state must be Routing::RuntimeState")

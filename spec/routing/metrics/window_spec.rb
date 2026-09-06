@@ -18,6 +18,14 @@ RSpec.describe Routing::Metrics::Window do
     expect(rewritten).to have_attributes(initial_status: "expired", status: "approved", latency_sec: 40)
   end
 
+  it "trims the oldest attempt by admission sequence, not completion order" do
+    window.record(build_observation(operation_id: "slow", admission_sequence: 1))
+    window.record(build_observation(operation_id: "fast", admission_sequence: 2))
+    window.record(build_observation(operation_id: "newest_attempt", admission_sequence: 3))
+
+    expect(window.observations.map(&:operation_id)).to eq(%w[fast newest_attempt])
+  end
+
   it "does not restore an evicted attempt", :aggregate_failures do
     window.record(build_observation(operation_id: "old", status: "expired"))
     window.record(build_observation(operation_id: "new"))

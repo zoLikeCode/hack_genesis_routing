@@ -39,8 +39,15 @@ module RoutingSpec
         bank: overrides.fetch(:bank, "sberbank"),
         initial_status: overrides.fetch(:initial_status, overrides.fetch(:status, "approved")),
         status: overrides.fetch(:status, "approved"),
-        latency_sec: overrides.fetch(:latency_sec, 30)
+        latency_sec: overrides.fetch(:latency_sec, 30),
+        attempted_at: overrides.fetch(:attempted_at, overrides.fetch(:created_at, default_observation_time)),
+        admission_sequence: overrides[:admission_sequence],
+        completed_at: overrides.fetch(:completed_at, nil)
       )
+    end
+
+    def default_observation_time
+      Time.iso8601("2026-07-30T08:00:00+03:00")
     end
 
     def default_strategy_weights

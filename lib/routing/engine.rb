@@ -7,13 +7,15 @@ module Routing
     include Setup
 
     FALLBACK_SELECTED = "fallback_selected"
-    CIRCUIT_BREAKER_OPEN = "circuit_breaker_open"
+    CIRCUIT_BREAKER_OPEN = HardConstraints::Reasons::CIRCUIT_BREAKER_OPEN
     STATUS_CHECK_REJECTED = "status_check_rejected"
 
-    attr_reader :state, :status_checker, :status_check_runner, :circuit_breaker
+    attr_reader :state, :status_checker, :status_check_runner, :circuit_breaker,
+                :admission, :settlement, :operations, :providers, :policy,
+                :runtime_store, :decisions_by_id, :operations_by_id
 
-    def self.call(operations:, providers:, policy:, simulator: nil, state: nil)
-      new(operations, providers, policy, simulator, state: state).call
+    def self.call(operations:, providers:, policy:, simulator: nil, state: nil, **) # rubocop:disable Metrics/ParameterLists
+      new(operations, providers, policy, simulator, state: state, **).call
     end
 
     def initialize(operations, providers, policy, simulator = nil, **options)
@@ -26,9 +28,12 @@ module Routing
       initialize_runtime!(simulator, options)
       initialize_status_checks!
       initialize_tracking!
+      initialize_control_plane!
     end
 
     def call
+      return Concurrency::Supervisor.call(self) if concurrent?
+
       @operations.each { |operation| route_one(operation) }
       @status_check_runner.drain do |result|
         handle_status_settlements(result)
@@ -41,12 +46,57 @@ module Routing
       validate_online_operation!(operation)
       run_due_status_checks(operation)
       decision = route(operation)
+      remember_operation!(operation, decision)
+      persist_runtime!
+      decision
+    end
+
+    def concurrent?
+      @concurrent
+    end
+
+    def client
+      @simulator
+    end
+
+    def remember_operation!(operation, decision)
       @processed_ids[operation.id] = true
       @operations_by_id[operation.id] = operation
       @decisions_by_id[operation.id] = decision
       @last_created_at = operation.created_at unless operation.created_at.nil?
-      persist_runtime!
-      decision
+    end
+
+    def assert_operation_admissible!(operation)
+      validate_online_operation!(operation)
+    end
+
+    def store_decision!(operation_id, decision)
+      @decisions_by_id[operation_id] = decision
+    end
+
+    def track_operation!(operation)
+      validate_online_operation!(operation)
+      @processed_ids[operation.id] = true
+      @operations_by_id[operation.id] = operation
+      @last_created_at = operation.created_at unless operation.created_at.nil?
+    end
+
+    def status_cascade_item(settlement)
+      operation, previous, provider_name = reconciliation_context(settlement)
+      return unless reroutable_reconciliation?(operation, previous, provider_name)
+
+      Concurrency::WorkItem.new(
+        operation,
+        RouteContext.new(
+          attempts: reconciled_attempts(previous, provider_name),
+          attempted: reserved_provider_names_for(operation),
+          total_latency: previous.latency_sec
+        )
+      )
+    end
+
+    def persist_runtime!
+      @runtime_store&.save(state: @state, status_checker: @status_checker)
     end
 
     private
@@ -66,10 +116,18 @@ module Routing
       @providers.apply_default_requests_per_minute_limit!(limit) unless limit.nil?
     end
 
+    def initialize_control_plane!
+      @admission = Admission.new(state: @state, policy: @policy, circuit_breaker: @circuit_breaker)
+      @settlement = Settlement.new(
+        state: @state,
+        policy: @policy,
+        status_check_runner: @status_check_runner,
+        persist: method(:persist_runtime!)
+      )
+    end
+
     def route(operation, context: RouteContext.new)
       Routing.assert(operation.is_a?(Operation), "operation must be Routing::Operation")
-      exclude_open_circuits!(context)
-
       loop do
         decision = route_attempt(operation, context)
         return decision if decision
@@ -77,98 +135,44 @@ module Routing
     end
 
     def route_attempt(operation, context)
-      selection, runtime_snapshot = pick(operation, context.attempted)
+      selection, runtime_snapshot = @admission.pick(operation, context)
       return resolve_unroutable(operation, selection, runtime_snapshot, context) unless selection.routable?
 
-      reserved = reserve(selection, operation, runtime_snapshot)
-      return if reserved.stale?
+      reserved = @admission.reserve(selection, operation, runtime_snapshot)
+      return @admission.handle_stale(context) if reserved.stale?
 
       context.merge_skips!(selection.evaluation.skipped)
-      return reservation_failed(selection, reserved, context) unless reserved.reserved?
+      return @admission.handle_ineligible(selection, reserved, context) unless reserved.reserved?
 
+      dispatch_and_settle(operation, selection, context, reserved.reservation)
+    end
+
+    def dispatch_and_settle(operation, selection, context, reservation)
       persist_runtime!
-      outcome = simulate_try(selection.provider, operation, reserved.reservation)
+      @state.mark_dispatching!(reservation, at: operation.created_at)
+      context.mark_attempted!(selection.provider.name)
+      outcome = simulate_try(selection.provider, operation, reservation)
+      return settle_failure(operation, selection, context, reservation, outcome) if outcome.is_a?(AdapterError)
+
       context.add_latency!(outcome.fetch(:latency_sec))
-      decision = apply_outcome(operation, selection, context, outcome, reserved.reservation)
-      context.mark_attempted!(selection.provider.name) if decision.nil?
-      decision
-    end
-
-    def reserve(selection, operation, runtime_snapshot)
-      @state.try_reserve!(
-        selection.provider,
-        operation,
-        expected_revision: runtime_snapshot.revision
-      )
-    end
-
-    def pick(operation, attempted)
-      runtime_snapshot = @state.snapshot
-      selection = Router.call(
+      @settlement.apply_payout(
         operation: operation,
-        providers: runtime_snapshot.providers,
-        snapshot: runtime_snapshot.soft_goals,
-        policy: @policy,
-        attempted: attempted
+        selection: selection,
+        context: context,
+        outcome: outcome,
+        reservation: reservation,
+        timeout_at: timeout_time(operation, context)
       )
-      [selection, runtime_snapshot]
     end
 
-    def apply_outcome(operation, selection, context, outcome, reservation)
-      result = outcome.fetch(:result)
-      @state.record_outcome!(
-        reservation: reservation, operation: operation, status: result,
-        latency_sec: outcome.fetch(:latency_sec)
-      )
-      return complete(operation, selection, context, outcome) if result == "approved"
-
-      if result == "expired"
-        @status_check_runner.schedule(reservation, timed_out_at: timeout_time(operation, context))
-        return complete(operation, selection, context, outcome)
-      end
-
-      return complete(operation, selection, context, outcome) if selection.fallback?
-
-      context.add_attempt!(skip_attempt(selection.provider.name, simulation_reason(result), nil))
-      nil
-    end
-
-    def simulate_try(provider, operation, reservation)
-      finished = false
-      outcome = ProviderInvoker.call(
-        client: @simulator,
-        provider: provider,
+    def settle_failure(operation, selection, context, reservation, error)
+      @settlement.apply_failure(
         operation: operation,
-        reservation: reservation
-      )
-      finished = true
-      outcome
-    ensure
-      record_failed_try(operation, provider, reservation) unless finished
-    end
-
-    def complete(operation, selection, context, outcome)
-      record_considered_skips!(selection, context)
-      context.add_attempt!(selected_attempt(selection, outcome))
-      Decision.new(
-        operation_id: operation.id,
-        selected_provider: selection.provider.name,
-        attempts: context.attempts,
-        simulated_result: outcome.fetch(:result),
-        latency_sec: context.total_latency
-      )
-    end
-
-    def selected_attempt(selection, outcome)
-      HardConstraints::Attempt.new(
-        provider: selection.provider.name,
-        decision: "selected",
-        reason: selected_reason(selection),
-        details: DecisionExplainer.details(
-          selection: selection,
-          policy: @policy,
-          result: outcome.fetch(:result)
-        )
+        selection: selection,
+        context: context,
+        reservation: reservation,
+        error: error,
+        timeout_at: timeout_time(operation, context)
       )
     end
 
@@ -178,12 +182,6 @@ module Routing
       context.merge_skips!(selection.evaluation.skipped)
       raise InvalidInputError,
             "operation #{operation.id} cannot be routed without violating hard constraints"
-    end
-
-    def reservation_failed(selection, reserved, context)
-      context.add_attempt!(skip_attempt(selection.provider.name, reserved.reason, reserved.details))
-      context.mark_attempted!(selection.provider.name)
-      nil
     end
 
     def validate_online_operation!(operation)
@@ -198,42 +196,6 @@ module Routing
       return Time.now if operation.created_at.nil?
 
       operation.created_at + context.total_latency
-    end
-
-    def record_considered_skips!(selection, context)
-      return if selection.fallback?
-
-      winner = selection.provider
-      winner_score = selection.ranking.scores.fetch(winner.name)
-      selection.ranking.ordered.each do |provider|
-        next if provider.name == winner.name
-
-        score = selection.ranking.scores.fetch(provider.name)
-        context.add_attempt!(
-          skip_attempt(
-            provider.name,
-            SoftGoals::Reasons::LOWER_SOFT_SCORE,
-            "total_score=#{score.total.round(4)} vs #{winner.name} #{winner_score.total.round(4)}"
-          )
-        )
-      end
-    end
-
-    def skip_attempt(name, reason, details)
-      HardConstraints::Attempt.new(provider: name, decision: "skipped", reason: reason, details: details)
-    end
-
-    def simulation_reason(result)
-      return Simulator::REJECTED if result == "rejected"
-      return Simulator::EXPIRED if result == "expired"
-
-      Routing.assert(false, "unexpected simulation result #{result}")
-    end
-
-    def selected_reason(selection)
-      return FALLBACK_SELECTED if selection.fallback?
-
-      selection.ranking.scores.fetch(selection.provider.name).reason
     end
   end
 end

@@ -11,8 +11,14 @@ RSpec.describe Routing::Provider do
       expect(provider).to have_attributes(in_progress_count: 1, in_progress_amount: 15_000)
     end
 
-    it "records the request on the RPM deque" do
+    it "does not record the request on the RPM deque until dispatch" do
       provider.reserve!(15_000, at: at)
+      expect(provider.request_count_at(at)).to eq(0)
+    end
+
+    it "records the request on the RPM deque at dispatch" do
+      provider.reserve!(15_000, at: at)
+      provider.record_dispatch!(at)
       expect(provider.request_count_at(at)).to eq(1)
     end
 

@@ -92,6 +92,19 @@ RSpec.describe Routing::Router do
     end
   end
 
+  context "when the preferred provider is temporarily excluded" do
+    it "selects the next remaining external provider" do
+      selection = described_class.call(
+        operation: operation,
+        providers: providers,
+        snapshot: snapshot,
+        policy: policy,
+        temporarily_excluded: ["payflow"]
+      )
+      expect(selection.provider.name).to eq("vipay")
+    end
+  end
+
   it "rejects an unknown attempted provider" do
     expect { call_with_unknown_attempt }.to raise_error(
       Routing::InvariantError, "attempted contains unknown providers: unknown"

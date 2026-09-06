@@ -25,6 +25,7 @@ RSpec.describe Routing::RuntimeStore do
     state = Routing::RuntimeState.new(providers)
     operation = build_operation
     reservation = state.try_reserve!(provider, operation, expected_revision: 0).reservation
+    state.mark_dispatching!(reservation, at: operation.created_at)
     state.record_outcome!(reservation: reservation, operation: operation, status: "expired", latency_sec: 5)
     checker = build_checker(state, providers)
     checker.schedule(reservation, timed_out_at: operation.created_at)

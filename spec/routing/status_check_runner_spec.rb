@@ -60,6 +60,7 @@ RSpec.describe Routing::StatusCheckRunner do
     state = Routing::RuntimeState.new(pool)
     operation = build_operation
     reservation = state.try_reserve!(provider, operation, expected_revision: state.snapshot.revision).reservation
+    state.mark_dispatching!(reservation, at: operation.created_at)
     state.mark_timeout!(reservation)
     checker = Routing::StatusChecker.new(
       state: state,

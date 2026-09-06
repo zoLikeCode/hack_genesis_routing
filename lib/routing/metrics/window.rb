@@ -58,6 +58,7 @@ module Routing
       def append(observation)
         @observations << observation
         @index[observation.operation_id] = observation
+        order_by_attempt!
         trim!
       end
 
@@ -75,6 +76,18 @@ module Routing
           dropped = @observations.shift
           @index.delete(dropped.operation_id)
         end
+      end
+
+      def order_by_attempt!
+        indexed = @observations.each_with_index.to_a
+        @observations = indexed.sort_by { |observation, index| attempt_key(observation, index) }.map(&:first)
+      end
+
+      def attempt_key(observation, index)
+        sequence = observation.admission_sequence
+        return [0, sequence] unless sequence.nil?
+
+        [1, observation.created_at.to_f, index]
       end
 
       def ensure_mutable!

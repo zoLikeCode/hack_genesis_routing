@@ -7,6 +7,8 @@ ruby ">= 4.0.0"
 gem "csv"
 gem "logger"
 gem "zeitwerk", "~> 2.7"
+gem "async"
+gem "async-http"
 
 group :development, :test do
   gem "rake", "~> 13.3"

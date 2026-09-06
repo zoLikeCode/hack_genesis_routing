@@ -32,11 +32,24 @@ module Routing
     def reserve!(amount, at:)
       Routing.assert(amount.is_a?(Numeric) && amount >= 0, "reserve amount must be non-negative")
       Routing.assert(@available_requisites.positive?, "reserve without available requisites")
+      Routing.assert(at.nil? || timestamp?(at), "reserve time must be Time or numeric")
       @in_progress_count += 1
       @in_progress_amount += amount
       @daily_reserved_amount += amount
       @available_requisites -= 1
-      record_request!(at) unless at.nil?
+    end
+
+    def intensity_retry_delay(now)
+      return if requests_per_minute_limit.nil? || @request_times.empty?
+      return if request_count_at(now) < requests_per_minute_limit
+
+      elapsed = timestamp_seconds(now) - timestamp_seconds(@request_times.first)
+      remaining = WINDOW_SEC - elapsed
+      remaining.positive? ? remaining : 0
+    end
+
+    def record_dispatch!(at)
+      record_request!(at)
     end
 
     def commit_approved!(amount)
@@ -72,13 +85,13 @@ module Routing
     end
 
     def record_request!(at)
-      Routing.assert(at.is_a?(Time), "request time must be Time")
+      Routing.assert(timestamp?(at), "request time must be Time or numeric")
       @request_times << at
       prune_requests!(at)
     end
 
     def request_count_at(at)
-      Routing.assert(at.is_a?(Time), "request time must be Time")
+      Routing.assert(timestamp?(at), "request time must be Time or numeric")
       prune_requests!(at)
       @request_times.size
     end
@@ -91,7 +104,7 @@ module Routing
         "in_progress_count" => in_progress_count,
         "in_progress_amount" => in_progress_amount,
         "available_requisites" => available_requisites,
-        "request_times" => @request_times.map(&:iso8601)
+        "request_times" => @request_times.map { |time| serialize_request_time(time) }
       }
     end
 
@@ -178,8 +191,20 @@ module Routing
     end
 
     def prune_requests!(at)
-      cutoff = at - WINDOW_SEC
-      @request_times.shift while @request_times.any? && @request_times.first < cutoff
+      cutoff = timestamp_seconds(at) - WINDOW_SEC
+      @request_times.shift while @request_times.any? && timestamp_seconds(@request_times.first) < cutoff
+    end
+
+    def timestamp?(value)
+      value.is_a?(Time) || value.is_a?(Numeric)
+    end
+
+    def timestamp_seconds(value)
+      value.is_a?(Time) ? value.to_f : value.to_f
+    end
+
+    def serialize_request_time(value)
+      value.is_a?(Time) ? value.iso8601 : value
     end
   end
 end

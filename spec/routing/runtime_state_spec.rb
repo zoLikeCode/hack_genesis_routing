@@ -38,14 +38,14 @@ RSpec.describe Routing::RuntimeState do
     snapshot = state.snapshot
     current = snapshot.providers.first
 
-    expect(reservation.status).to eq("pending")
+    expect(reservation.status).to eq("reserved")
     expect(snapshot.soft_goals.count("vipay")).to eq(1)
     expect(snapshot.soft_goals.volume("vipay")).to eq(15_000)
     expect(current).to have_attributes(in_progress_count: 1, daily_reserved_amount: 15_000)
   end
 
   it "commits an approved reservation without double-counting its volume", :aggregate_failures do
-    reservation = reserve
+    reservation = dispatch
     state.approve!(reservation)
     snapshot = state.snapshot
 
@@ -56,7 +56,7 @@ RSpec.describe Routing::RuntimeState do
   end
 
   it "rolls back every provisional coefficient after rejection", :aggregate_failures do
-    reservation = reserve
+    reservation = dispatch
     state.reject!(reservation)
     snapshot = state.snapshot
 
@@ -67,7 +67,7 @@ RSpec.describe Routing::RuntimeState do
   end
 
   it "keeps timeout capacity until a late cancellation compensates current state", :aggregate_failures do
-    reservation = reserve
+    reservation = dispatch
     state.mark_timeout!(reservation)
 
     expect(state.snapshot.soft_goals.count("vipay")).to eq(1)
@@ -79,7 +79,7 @@ RSpec.describe Routing::RuntimeState do
   end
 
   it "commits a late timeout approval exactly once", :aggregate_failures do
-    reservation = reserve
+    reservation = dispatch
     state.mark_timeout!(reservation)
     resolve_timeout("approved")
 
@@ -105,7 +105,7 @@ RSpec.describe Routing::RuntimeState do
   end
 
   it "rewrites a timed-out metric after status-check settlement", :aggregate_failures do
-    reservation = reserve
+    reservation = dispatch
     state.mark_timeout!(reservation)
     state.record_metric!(operation: operation, provider_name: "vipay", status: "expired", latency_sec: 40)
     state.resolve_timeout!(operation_id: operation.id, provider_name: provider.name, result: "approved")
@@ -121,7 +121,7 @@ RSpec.describe Routing::RuntimeState do
   end
 
   it "records and settles a normal provider outcome atomically", :aggregate_failures do
-    reservation = reserve
+    reservation = dispatch
     state.record_outcome!(
       reservation: reservation, operation: operation, status: "approved", latency_sec: 12
     )
@@ -141,8 +141,26 @@ RSpec.describe Routing::RuntimeState do
     expect(result.reason).to eq("provider_inactive")
   end
 
+  it "does not charge RPM for a reserved payout that never dispatched", :aggregate_failures do
+    reservation = reserve
+    at = operation.created_at
+    expect(provider.request_count_at(at)).to eq(0)
+
+    state.drop_reservation!(reservation)
+
+    expect(provider.request_count_at(at)).to eq(0)
+    expect(reservation.status).to eq("rejected")
+    expect(provider.in_progress_count).to eq(0)
+  end
+
   def reserve
     state.try_reserve!(provider, operation, expected_revision: state.snapshot.revision).reservation
+  end
+
+  def dispatch
+    reservation = reserve
+    state.mark_dispatching!(reservation, at: operation.created_at)
+    reservation
   end
 
   def resolve_timeout(result)

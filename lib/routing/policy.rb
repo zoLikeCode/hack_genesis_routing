@@ -9,7 +9,8 @@ module Routing
       { "max" => 100_000, "providers" => %w[vipay quickpay payflow] },
       { "max" => nil, "providers" => %w[quickpay vipay payflow] }
     ].freeze
-    attr_reader :active_profile, :provider_profiles, :status_check, :circuit_breaker, :metrics, :amount_bands
+    attr_reader :active_profile, :provider_profiles, :status_check, :circuit_breaker, :metrics, :amount_bands,
+                :concurrency
 
     def self.load(path)
       new(parse(path))
@@ -75,6 +76,10 @@ module Routing
       seed
     end
 
+    def concurrency_enabled?
+      concurrency.fetch("enabled")
+    end
+
     def default_requests_per_minute_limit
       raw = @data["hard_constraints"]
       return if raw.nil?
@@ -103,6 +108,7 @@ module Routing
     def configure_runtime_policy!
       @status_check = normalize_status_check(@data.fetch("status_check", {}))
       @circuit_breaker = normalize_circuit_breaker(@data.fetch("circuit_breaker", {}))
+      @concurrency = ConcurrencyConfig.parse(@data.fetch("concurrency", {}))
     end
 
     def stringify_keys(hash)

@@ -1,0 +1,262 @@
+[
+  {
+    "operation_id": "op_101",
+    "selected_provider": "vipay",
+    "attempts": [
+      {
+        "provider": "payflow",
+        "decision": "skipped",
+        "reason": "lower_soft_score",
+        "details": "total_score=0.778 vs vipay 0.817"
+      },
+      {
+        "provider": "quickpay",
+        "decision": "skipped",
+        "reason": "lower_soft_score",
+        "details": "total_score=0.7088 vs vipay 0.817"
+      },
+      {
+        "provider": "vipay",
+        "decision": "selected",
+        "reason": "highest_soft_score",
+        "details": "profile=reliable_history; total_score=0.817; conversion_estimate=0.8955; conversion_source=provider_history; conversion_scope=provider; conversion_n=12; conversion_prior=0.87; conversion_data_age_sec=78288.0; count_share=0.728*0.05; volume_share=0.967*0.05; conversion=0.895*0.75; financial_obligation=0.5*0.05; load_balance=0.357*0.1; goal_disagreement count_share=vipay vs volume_share=quickpay; goal_disagreement count_share=vipay vs financial_obligation=quickpay; goal_disagreement count_share=vipay vs load_balance=quickpay; goal_disagreement volume_share=quickpay vs conversion=vipay; goal_disagreement conversion=vipay vs financial_obligation=quickpay; goal_disagreement conversion=vipay vs load_balance=quickpay"
+      }
+    ],
+    "simulated_result": "approved",
+    "latency_sec": 38
+  },
+  {
+    "operation_id": "op_102",
+    "selected_provider": "payflow",
+    "attempts": [
+      {
+        "provider": "vipay",
+        "decision": "skipped",
+        "reason": "bank_not_in_list",
+        "details": "alfa not in [\"sberbank\", \"tinkoff\", \"vtb\"]"
+      },
+      {
+        "provider": "quickpay",
+        "decision": "skipped",
+        "reason": "lower_soft_score",
+        "details": "total_score=0.7153 vs payflow 0.7911"
+      },
+      {
+        "provider": "payflow",
+        "decision": "selected",
+        "reason": "highest_soft_score",
+        "details": "profile=controlled_share; total_score=0.7911; conversion_estimate=0.8067; conversion_source=provider_history; conversion_scope=provider; conversion_n=5; conversion_prior=0.91; conversion_data_age_sec=77450.0; count_share=0.953*0.05; volume_share=0.966*0.2; conversion=0.807*0.65; financial_obligation=0.5*0.05; load_balance=0.017*0.05; unmet_count_share: vipay; unmet_volume_share: vipay; goal_disagreement count_share=payflow vs volume_share=quickpay; goal_disagreement count_share=payflow vs financial_obligation=quickpay; goal_disagreement count_share=payflow vs load_balance=quickpay; goal_disagreement volume_share=quickpay vs conversion=payflow; goal_disagreement conversion=payflow vs financial_obligation=quickpay; goal_disagreement conversion=payflow vs load_balance=quickpay"
+      }
+    ],
+    "simulated_result": "approved",
+    "latency_sec": 52
+  },
+  {
+    "operation_id": "op_103",
+    "selected_provider": "quickpay",
+    "attempts": [
+      {
+        "provider": "vipay",
+        "decision": "skipped",
+        "reason": "amount_exceeds_limit",
+        "details": "150000 > limit_amount_max 100000"
+      },
+      {
+        "provider": "payflow",
+        "decision": "skipped",
+        "reason": "amount_exceeds_limit",
+        "details": "150000 > limit_amount_max 50000"
+      },
+      {
+        "provider": "quickpay",
+        "decision": "selected",
+        "reason": "only_eligible_provider",
+        "details": "profile=capacity_obligation; total_score=0.7127; conversion_estimate=0.6531; conversion_source=provider_history; conversion_scope=provider; conversion_n=22; conversion_prior=0.79; conversion_data_age_sec=76015.0; count_share=0.994*0.025; volume_share=0.97*0.025; conversion=0.653*0.65; financial_obligation=0.75*0.15; load_balance=0.844*0.15; unmet_count_share: vipay; unmet_count_share: payflow; unmet_volume_share: vipay; unmet_volume_share: payflow"
+      }
+    ],
+    "simulated_result": "approved",
+    "latency_sec": 29
+  },
+  {
+    "operation_id": "op_104",
+    "selected_provider": "quickpay",
+    "attempts": [
+      {
+        "provider": "vipay",
+        "decision": "skipped",
+        "reason": "bank_not_in_list",
+        "details": "gazprombank not in [\"sberbank\", \"tinkoff\", \"vtb\"]"
+      },
+      {
+        "provider": "payflow",
+        "decision": "skipped",
+        "reason": "bank_not_in_list",
+        "details": "gazprombank not in [\"sberbank\", \"alfa\"]"
+      },
+      {
+        "provider": "quickpay",
+        "decision": "selected",
+        "reason": "only_eligible_provider",
+        "details": "profile=capacity_obligation; total_score=0.7183; conversion_estimate=0.6636; conversion_source=provider_history; conversion_scope=provider; conversion_n=23; conversion_prior=0.79; conversion_data_age_sec=30.0; count_share=0.953*0.025; volume_share=0.97*0.025; conversion=0.664*0.65; financial_obligation=0.749*0.15; load_balance=0.843*0.15; unmet_count_share: vipay; unmet_count_share: payflow; unmet_volume_share: vipay; unmet_volume_share: payflow"
+      }
+    ],
+    "simulated_result": "approved",
+    "latency_sec": 29
+  },
+  {
+    "operation_id": "op_105",
+    "selected_provider": "vipay",
+    "attempts": [
+      {
+        "provider": "payflow",
+        "decision": "skipped",
+        "reason": "bank_not_in_list",
+        "details": "tinkoff not in [\"sberbank\", \"alfa\"]"
+      },
+      {
+        "provider": "quickpay",
+        "decision": "skipped",
+        "reason": "lower_soft_score",
+        "details": "total_score=0.7224 vs vipay 0.8326"
+      },
+      {
+        "provider": "vipay",
+        "decision": "selected",
+        "reason": "highest_soft_score",
+        "details": "profile=reliable_history; total_score=0.8326; conversion_estimate=0.9; conversion_source=provider_history; conversion_scope=provider; conversion_n=13; conversion_prior=0.87; conversion_data_age_sec=120.0; count_share=0.978*0.05; volume_share=0.97*0.05; conversion=0.9*0.75; financial_obligation=0.5*0.05; load_balance=0.352*0.1; unmet_count_share: payflow; unmet_volume_share: payflow; goal_disagreement count_share=vipay vs volume_share=quickpay; goal_disagreement count_share=vipay vs financial_obligation=quickpay; goal_disagreement count_share=vipay vs load_balance=quickpay; goal_disagreement volume_share=quickpay vs conversion=vipay; goal_disagreement conversion=vipay vs financial_obligation=quickpay; goal_disagreement conversion=vipay vs load_balance=quickpay"
+      }
+    ],
+    "simulated_result": "approved",
+    "latency_sec": 38
+  },
+  {
+    "operation_id": "op_106",
+    "selected_provider": "vipay",
+    "attempts": [
+      {
+        "provider": "payflow",
+        "decision": "skipped",
+        "reason": "amount_exceeds_limit",
+        "details": "52000 > limit_amount_max 50000"
+      },
+      {
+        "provider": "quickpay",
+        "decision": "skipped",
+        "reason": "lower_soft_score",
+        "details": "total_score=0.7222 vs vipay 0.8346"
+      },
+      {
+        "provider": "vipay",
+        "decision": "selected",
+        "reason": "highest_soft_score",
+        "details": "profile=reliable_history; total_score=0.8346; conversion_estimate=0.9042; conversion_source=provider_history; conversion_scope=provider; conversion_n=14; conversion_prior=0.87; conversion_data_age_sec=30.0; count_share=0.975*0.05; volume_share=0.971*0.05; conversion=0.904*0.75; financial_obligation=0.5*0.05; load_balance=0.342*0.1; unmet_count_share: payflow; unmet_volume_share: payflow; goal_disagreement count_share=vipay vs volume_share=quickpay; goal_disagreement count_share=vipay vs financial_obligation=quickpay; goal_disagreement count_share=vipay vs load_balance=quickpay; goal_disagreement volume_share=quickpay vs conversion=vipay; goal_disagreement conversion=vipay vs financial_obligation=quickpay; goal_disagreement conversion=vipay vs load_balance=quickpay"
+      }
+    ],
+    "simulated_result": "approved",
+    "latency_sec": 38
+  },
+  {
+    "operation_id": "op_107",
+    "selected_provider": "payflow",
+    "attempts": [
+      {
+        "provider": "vipay",
+        "decision": "skipped",
+        "reason": "amount_below_minimum",
+        "details": "800 < limit_amount_min 1000"
+      },
+      {
+        "provider": "quickpay",
+        "decision": "skipped",
+        "reason": "amount_below_minimum",
+        "details": "800 < limit_amount_min 1000"
+      },
+      {
+        "provider": "payflow",
+        "decision": "selected",
+        "reason": "only_eligible_provider",
+        "details": "profile=controlled_share; total_score=0.802; conversion_estimate=0.8188; conversion_source=provider_history; conversion_scope=provider; conversion_n=6; conversion_prior=0.91; conversion_data_age_sec=150.0; count_share=0.997*0.05; volume_share=0.971*0.2; conversion=0.819*0.65; financial_obligation=0.5*0.05; load_balance=0.017*0.05; unmet_count_share: vipay; unmet_count_share: quickpay; unmet_volume_share: vipay; unmet_volume_share: quickpay"
+      }
+    ],
+    "simulated_result": "approved",
+    "latency_sec": 52
+  },
+  {
+    "operation_id": "op_108",
+    "selected_provider": "quickpay",
+    "attempts": [
+      {
+        "provider": "vipay",
+        "decision": "skipped",
+        "reason": "bank_not_in_list",
+        "details": "raiffeisen not in [\"sberbank\", \"tinkoff\", \"vtb\"]"
+      },
+      {
+        "provider": "payflow",
+        "decision": "skipped",
+        "reason": "bank_not_in_list",
+        "details": "raiffeisen not in [\"sberbank\", \"alfa\"]"
+      },
+      {
+        "provider": "quickpay",
+        "decision": "selected",
+        "reason": "only_eligible_provider",
+        "details": "profile=capacity_obligation; total_score=0.7236; conversion_estimate=0.6735; conversion_source=provider_history; conversion_scope=provider; conversion_n=24; conversion_prior=0.79; conversion_data_age_sec=120.0; count_share=0.987*0.025; volume_share=0.971*0.025; conversion=0.674*0.65; financial_obligation=0.741*0.15; load_balance=0.838*0.15; unmet_count_share: vipay; unmet_count_share: payflow; unmet_volume_share: vipay; unmet_volume_share: payflow"
+      }
+    ],
+    "simulated_result": "approved",
+    "latency_sec": 29
+  },
+  {
+    "operation_id": "op_109",
+    "selected_provider": "vipay",
+    "attempts": [
+      {
+        "provider": "payflow",
+        "decision": "skipped",
+        "reason": "bank_not_in_list",
+        "details": "vtb not in [\"sberbank\", \"alfa\"]"
+      },
+      {
+        "provider": "quickpay",
+        "decision": "skipped",
+        "reason": "lower_soft_score",
+        "details": "total_score=0.7227 vs vipay 0.835"
+      },
+      {
+        "provider": "vipay",
+        "decision": "selected",
+        "reason": "highest_soft_score",
+        "details": "profile=reliable_history; total_score=0.835; conversion_estimate=0.9042; conversion_source=provider_history; conversion_scope=provider; conversion_n=14; conversion_prior=0.87; conversion_data_age_sec=90.0; count_share=0.987*0.05; volume_share=0.972*0.05; conversion=0.904*0.75; financial_obligation=0.5*0.05; load_balance=0.34*0.1; unmet_count_share: payflow; unmet_volume_share: payflow; goal_disagreement count_share=vipay vs volume_share=quickpay; goal_disagreement count_share=vipay vs financial_obligation=quickpay; goal_disagreement count_share=vipay vs load_balance=quickpay; goal_disagreement volume_share=quickpay vs conversion=vipay; goal_disagreement conversion=vipay vs financial_obligation=quickpay; goal_disagreement conversion=vipay vs load_balance=quickpay"
+      }
+    ],
+    "simulated_result": "approved",
+    "latency_sec": 38
+  },
+  {
+    "operation_id": "op_110",
+    "selected_provider": "payflow",
+    "attempts": [
+      {
+        "provider": "vipay",
+        "decision": "skipped",
+        "reason": "bank_not_in_list",
+        "details": "alfa not in [\"sberbank\", \"tinkoff\", \"vtb\"]"
+      },
+      {
+        "provider": "quickpay",
+        "decision": "skipped",
+        "reason": "lower_soft_score",
+        "details": "total_score=0.7215 vs payflow 0.8083"
+      },
+      {
+        "provider": "payflow",
+        "decision": "selected",
+        "reason": "highest_soft_score",
+        "details": "profile=controlled_share; total_score=0.8083; conversion_estimate=0.8294; conversion_source=provider_history; conversion_scope=provider; conversion_n=7; conversion_prior=0.91; conversion_data_age_sec=90.0; count_share=0.998*0.05; volume_share=0.971*0.2; conversion=0.829*0.65; financial_obligation=0.5*0.05; load_balance=0.004*0.05; unmet_count_share: vipay; unmet_volume_share: vipay; goal_disagreement count_share=payflow vs volume_share=quickpay; goal_disagreement count_share=payflow vs financial_obligation=quickpay; goal_disagreement count_share=payflow vs load_balance=quickpay; goal_disagreement volume_share=quickpay vs conversion=payflow; goal_disagreement conversion=payflow vs financial_obligation=quickpay; goal_disagreement conversion=payflow vs load_balance=quickpay"
+      }
+    ],
+    "simulated_result": "approved",
+    "latency_sec": 52
+  }
+]
