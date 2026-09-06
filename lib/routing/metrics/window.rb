@@ -85,9 +85,9 @@ module Routing
 
       def attempt_key(observation, index)
         sequence = observation.admission_sequence
-        return [0, sequence] unless sequence.nil?
+        return [1, sequence, index] unless sequence.nil?
 
-        [1, observation.created_at.to_f, index]
+        [0, observation.attempted_at.to_f, index]
       end
 
       def ensure_mutable!

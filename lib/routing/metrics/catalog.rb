@@ -87,9 +87,9 @@ module Routing
 
       def attempt_key(row, index)
         sequence = row.admission_sequence
-        return [0, sequence] unless sequence.nil?
+        return [1, sequence, index] unless sequence.nil?
 
-        [1, row.created_at.to_f, index]
+        [0, row.attempted_at.to_f, index]
       end
 
       def reference_time

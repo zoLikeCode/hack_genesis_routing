@@ -200,7 +200,7 @@ module Routing
     end
 
     def timestamp_seconds(value)
-      value.is_a?(Time) ? value.to_f : value.to_f
+      value.to_f
     end
 
     def serialize_request_time(value)

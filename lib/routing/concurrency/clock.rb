@@ -11,8 +11,8 @@ module Routing
         Time.now
       end
 
-      def dispatch_time(operation)
-        operation.created_at || wall
+      def dispatch_time(_operation)
+        monotonic
       end
     end
   end

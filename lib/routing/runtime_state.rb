@@ -1,7 +1,7 @@
 # frozen_string_literal: true
 
 module Routing
-  class RuntimeState
+  class RuntimeState # rubocop:disable Metrics/ClassLength
     include Serialization
 
     Snapshot = Data.define(:revision, :providers, :soft_goals)
@@ -57,7 +57,7 @@ module Routing
       @pending_counts = Hash.new(0)
       @reservations = {}
       @revision = 0
-      @admission_sequence = 0
+      @admission_sequence = initial_admission_sequence(history)
       @mutex = Mutex.new
     end
 
@@ -82,7 +82,7 @@ module Routing
       @mutex.synchronize { @revision == revision }
     end
 
-    def try_reserve!(provider, operation, expected_revision:)
+    def try_reserve!(provider, operation, expected_revision:, at: nil)
       Routing.assert(provider.is_a?(Provider), "provider must be Routing::Provider")
       Routing.assert(operation.is_a?(Operation), "operation must be Routing::Operation")
       Routing.assert(expected_revision.is_a?(Integer) && expected_revision >= 0, "revision must be non-negative")
@@ -90,7 +90,7 @@ module Routing
         return ReserveResult.stale unless @revision == expected_revision
 
         live = @providers.fetch(provider.name)
-        result = HardConstraints.evaluate(live, operation)
+        result = HardConstraints.evaluate(live, operation, at: at)
         return ReserveResult.ineligible(result) if result.skipped?
 
         reservation = create_reservation(operation, live)
@@ -191,6 +191,12 @@ module Routing
     end
 
     private
+
+    def initial_admission_sequence(history)
+      return 0 if history.nil?
+
+      history.observations.filter_map(&:admission_sequence).max || 0
+    end
 
     def rewrite_metric!(operation_id:, provider_name:, status:)
       mapped = status == "approved" ? "approved" : "rejected"

@@ -19,8 +19,20 @@ module Routing
       end
 
       def call
-        Async { |task| run(task) }
-        @engine.operations.map { |operation| @engine.decisions_by_id.fetch(operation.id) }
+        failure = Async do |task|
+          run(task)
+          nil
+        rescue Exception => e # rubocop:disable Lint/RescueException
+          e
+        end.wait
+        raise failure unless failure.nil?
+
+        decisions = @engine.operations.map { |operation| @engine.decisions_by_id.fetch(operation.id) }
+        unresolved = decisions.reject(&:final?)
+        return decisions if unresolved.empty?
+
+        raise InvalidInputError,
+              "operations remain reconciliation_pending: #{unresolved.map(&:operation_id).join(', ')}"
       end
 
       private
@@ -30,14 +42,20 @@ module Routing
         enqueue_operations
         settlement_task = task.async { settlement_loop }
         status_task = task.async { status_loop(task) }
-        admission_loop(task)
-        @progress.stop
-        @events.push(:stop)
-        settlement_task.wait
-        status_task.wait
-        @slots.shutdown
-        @status_pool.shutdown
-        @persist.shutdown
+        begin
+          admission_loop(task)
+          settlement_task.wait
+          status_task.wait
+        rescue Exception # rubocop:disable Lint/RescueException
+          @progress.stop
+          settlement_task.stop
+          status_task.stop
+          raise
+        ensure
+          @slots.shutdown
+          @status_pool.shutdown
+          @persist.shutdown
+        end
       end
 
       def setup(task)
@@ -95,28 +113,29 @@ module Routing
 
       def admission_loop(task)
         loop do
+          checkpoint = @progress.version
           item = @inbound.shift
           if item
             parked = @admission.admit(item)
-            wait_for_capacity(task) if parked == :parked
+            wait_for_capacity(task, after: checkpoint) if parked == :parked
             next
           end
           break if done?
 
-          wait_for_progress(task)
+          wait_for_progress(task, after: checkpoint, key: :admission)
         end
       end
 
       def settlement_loop
         loop do
+          checkpoint = @progress.version
           event = @events.shift
           if event.nil?
             break if done?
 
-            @progress.wait
+            @progress.wait(key: :settlement, after: checkpoint)
             next
           end
-          break if event == :stop
 
           @settlement.handle(event)
           @progress.signal
@@ -125,12 +144,18 @@ module Routing
 
       def status_loop(task)
         loop do
+          checkpoint = @progress.version
           break if done?
 
           now = @clock.wall
-          due = @engine.status_checker.take_due(now)
+          available = @status_pool.available_slots
+          if available.zero?
+            wait_for_progress(task, after: checkpoint, key: :status)
+            next
+          end
+          due = @engine.status_checker.take_due(now, limit: available)
           if due.empty?
-            wait_for_status(task, now)
+            wait_for_status(task, now, after: checkpoint)
             next
           end
 
@@ -148,26 +173,27 @@ module Routing
         end
       end
 
-      def wait_for_status(task, now)
+      def wait_for_status(task, now, after:)
         nxt = @engine.status_checker.next_check_at
         delay = nxt.nil? ? nil : [nxt - now, 0].max
-        wait_for_progress(task, delay)
+        wait_for_progress(task, delay, after: after, key: :status)
       end
 
-      def wait_for_capacity(task)
-        now = @clock.wall
+      def wait_for_capacity(task, after:)
+        task.sleep(0)
+        now = @clock.monotonic
         delay = @engine.providers.filter_map { |provider| provider.intensity_retry_delay(now) }.min
-        wait_for_progress(task, delay)
+        wait_for_progress(task, delay, after: after, key: :admission)
       end
 
-      def wait_for_progress(task, delay = nil)
+      def wait_for_progress(task, delay = nil, after:, key:)
         return if @progress.stopped?
-        return @progress.wait if delay.nil?
+        return @progress.wait(key: key, after: after) if delay.nil?
 
         if delay <= 0
           task.sleep(0)
         else
-          task.with_timeout(delay) { @progress.wait }
+          task.with_timeout(delay) { @progress.wait(key: key, after: after) }
         end
       rescue Async::TimeoutError
         nil

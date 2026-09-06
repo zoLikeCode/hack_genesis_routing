@@ -11,7 +11,7 @@ module Routing
       @circuit_breaker = circuit_breaker
     end
 
-    def pick(operation, context)
+    def pick(operation, context, at: nil)
       Routing.assert(operation.is_a?(Operation), "operation must be Routing::Operation")
       Routing.assert(context.is_a?(RouteContext), "context must be Routing::RouteContext")
       exclude_open_circuits!(context)
@@ -22,16 +22,18 @@ module Routing
         snapshot: snapshot.soft_goals,
         policy: @policy,
         attempted: context.attempted,
-        temporarily_excluded: context.temporarily_excluded
+        temporarily_excluded: context.temporarily_excluded,
+        hard_constraint_time: at
       )
       [selection, snapshot]
     end
 
-    def reserve(selection, operation, snapshot)
+    def reserve(selection, operation, snapshot, at: nil)
       @state.try_reserve!(
         selection.provider,
         operation,
-        expected_revision: snapshot.revision
+        expected_revision: snapshot.revision,
+        at: at
       )
     end
 

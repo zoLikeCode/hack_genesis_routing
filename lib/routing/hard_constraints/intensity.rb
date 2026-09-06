@@ -3,11 +3,11 @@
 module Routing
   module HardConstraints
     class Intensity
-      def self.call(provider, operation)
+      def self.call(provider, operation, at: nil)
         limit = provider.requests_per_minute_limit
         return Result.ok if limit.nil?
 
-        at = operation.created_at
+        at ||= operation.created_at
         raise InvalidInputError, "created_at required for intensity check" if at.nil?
 
         count = provider.request_count_at(at)

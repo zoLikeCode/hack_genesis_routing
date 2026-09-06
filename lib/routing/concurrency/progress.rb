@@ -1,36 +1,64 @@
 # frozen_string_literal: true
 
-require "async"
+require "async/queue"
 
 module Routing
   module Concurrency
     class Progress
       def initialize
-        @notification = Async::Notification.new
+        @queues = {}
+        @mutex = Mutex.new
         @version = 0
         @stopped = false
+        @waiting = {}
       end
 
       def stopped?
-        @stopped
+        @mutex.synchronize { @stopped }
+      end
+
+      def version
+        @mutex.synchronize { @version }
       end
 
       def signal
-        @version += 1
-        @notification.signal
+        queues = @mutex.synchronize do
+          return self if @stopped
+
+          @version += 1
+          @waiting.keys.filter_map { |key| @queues[key] }
+        end
+        queues.each { |queue| queue.enqueue(true) }
         self
       end
 
       def stop
-        @stopped = true
-        signal
+        queues = @mutex.synchronize do
+          return self if @stopped
+
+          @stopped = true
+          @version += 1
+          @queues.values
+        end
+        queues.each(&:close)
         self
       end
 
-      def wait
-        seen = @version
-        @notification.wait while !@stopped && @version == seen
+      def wait(key:, after: version)
+        queue = @mutex.synchronize do
+          return self if @stopped || @version != after
+
+          Routing.assert(!@waiting.key?(key), "duplicate progress waiter #{key}")
+          @waiting[key] = true
+          @queues[key] ||= Async::Queue.new
+        end
+        loop do
+          queue.dequeue
+          break if @mutex.synchronize { @stopped || @version != after }
+        end
         self
+      ensure
+        @mutex.synchronize { @waiting.delete(key) } if queue
       end
     end
   end

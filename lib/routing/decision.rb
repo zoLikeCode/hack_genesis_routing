@@ -6,7 +6,7 @@ module Routing
 
     attr_reader :operation_id, :selected_provider, :attempts, :simulated_result, :latency_sec
 
-    def initialize(operation_id:, selected_provider:, attempts:, simulated_result:, latency_sec:, final: true)
+    def initialize(operation_id:, selected_provider:, attempts:, simulated_result:, latency_sec:, final: true) # rubocop:disable Metrics/ParameterLists
       Routing.assert(operation_id.is_a?(String) && !operation_id.empty?, "operation_id required")
       Routing.assert(selected_provider.is_a?(String) && !selected_provider.empty?, "selected_provider required")
       Routing.assert(attempts.is_a?(Array) && attempts.all?(HardConstraints::Attempt),

@@ -95,11 +95,42 @@ module Routing
       )
     end
 
+    def finalize_status_decision!(settlement)
+      operation_id = settlement.fetch("operation_id")
+      provider_name = settlement.fetch("provider")
+      result = settlement.fetch("result")
+      previous = @decisions_by_id.fetch(operation_id)
+      Routing.assert(previous.provisional?, "status settlement requires a provisional decision")
+      Routing.assert(previous.selected_provider == provider_name,
+                     "status settlement provider does not match provisional decision")
+      @decisions_by_id[operation_id] = Decision.new(
+        operation_id: operation_id,
+        selected_provider: provider_name,
+        attempts: finalized_status_attempts(previous, provider_name, result),
+        simulated_result: result,
+        latency_sec: previous.latency_sec,
+        final: true
+      )
+    end
+
     def persist_runtime!
       @runtime_store&.save(state: @state, status_checker: @status_checker)
     end
 
     private
+
+    def finalized_status_attempts(previous, provider_name, result)
+      previous.attempts.map do |attempt|
+        next attempt unless attempt.provider == provider_name && attempt.decision == "selected"
+
+        HardConstraints::Attempt.new(
+          provider: provider_name,
+          decision: "selected",
+          reason: attempt.reason,
+          details: "terminal status-check #{result}; reservation settled"
+        )
+      end
+    end
 
     def build_status_checker
       StatusChecker.new(

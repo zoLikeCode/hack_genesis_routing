@@ -83,6 +83,23 @@ RSpec.describe Routing::StatusChecker do
     expect(reservation.status).to eq("approved")
   end
 
+  it "claims only as many due tasks as the worker pool can accept", :aggregate_failures do
+    checker, state, first, now = build_checker(statuses: [])
+    second_operation = build_operation(operation_id: "op_second")
+    second = state.try_reserve!(
+      state.providers.fetch("vipay"), second_operation, expected_revision: state.snapshot.revision
+    ).reservation
+    state.mark_dispatching!(second, at: now)
+    state.mark_timeout!(second)
+    checker.schedule(first, timed_out_at: now)
+    checker.schedule(second, timed_out_at: now)
+
+    claimed = checker.take_due(now + 5, limit: 1)
+
+    expect(claimed.size).to eq(1)
+    expect(checker.tasks.map(&:status).tally).to eq("checking" => 1, "scheduled" => 1)
+  end
+
   def build_checker(statuses:, config: status_config)
     provider = build_provider
     pool = Routing::ProviderPool.new([provider])

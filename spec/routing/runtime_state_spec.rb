@@ -7,6 +7,19 @@ RSpec.describe Routing::RuntimeState do
   let(:pool) { Routing::ProviderPool.new([provider]) }
   let(:operation) { build_operation }
 
+  it "continues admission sequence after seeded history" do
+    observation = build_observation(admission_sequence: 7)
+    history = Routing::History.new({ "vipay" => {} }, observations: [observation])
+    provider = build_provider
+    state = described_class.new(Routing::ProviderPool.new([provider]), history: history)
+    operation = build_operation
+    reservation = state.try_reserve!(provider, operation, expected_revision: 0).reservation
+
+    state.mark_dispatching!(reservation, at: operation.created_at)
+
+    expect(reservation.admission_sequence).to eq(8)
+  end
+
   it "returns a point-in-time provider copy", :aggregate_failures do
     snapshot = state.snapshot
     pool.reserve!(provider, operation)

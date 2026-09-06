@@ -21,6 +21,48 @@ RSpec.describe Routing::Adapters::AsyncHttpClient do
     server&.close
   end
 
+  it "applies the timeout while reading the response body", :aggregate_failures do
+    response = Struct.new(:closed) do
+      def success? = true
+      def status = 200
+
+      def read
+        Async::Task.current.sleep(0.05)
+        JSON.generate("result" => "approved")
+      end
+
+      def close = self.closed = true
+    end.new(false)
+    internet = instance_double(Async::HTTP::Internet, post: response)
+    client = described_class.new(base_url: "http://example.test", timeout_sec: 0.01, internet: internet)
+
+    error = Async do
+      client.call(build_provider, operation: build_operation, idempotency_key: "key")
+    rescue StandardError => e
+      e
+    end.wait
+
+    expect(error).to be_a(Async::TimeoutError)
+    expect(response.closed).to be(true)
+  end
+
+  it "reports non-successful HTTP responses as transport errors" do
+    response = Struct.new(:status) do
+      def success? = false
+      def close = nil
+    end.new(500)
+    internet = instance_double(Async::HTTP::Internet, post: response)
+    client = described_class.new(base_url: "http://example.test", internet: internet)
+
+    error = Async do
+      client.call(build_provider, operation: build_operation, idempotency_key: "key")
+    rescue StandardError => e
+      e
+    end.wait
+
+    expect(error).to be_a(IOError).and have_attributes(message: include("failed with 500"))
+  end
+
   def json_http_server
     server = TCPServer.new("127.0.0.1", 0)
     Thread.new { serve_json(server) }

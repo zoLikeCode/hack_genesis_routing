@@ -20,8 +20,10 @@ module Routing
       @mutex = Mutex.new
     end
 
-    def take_due(now)
-      claim_due(now)
+    def take_due(now, limit: nil)
+      Routing.assert(limit.nil? || (limit.is_a?(Integer) && limit >= 0),
+                     "status check claim limit must be a non-negative integer")
+      claim_due(now, limit: limit)
     end
 
     def run_task(task, now)
@@ -70,6 +72,13 @@ module Routing
       end
     end
 
+    def active_task?(idempotency_key)
+      @mutex.synchronize do
+        task = @tasks[idempotency_key]
+        !task.nil? && StatusCheckTask::ACTIVE_STATUSES.include?(task.status)
+      end
+    end
+
     def summary
       snapshot = tasks
       counts = snapshot.map(&:status).tally
@@ -107,9 +116,11 @@ module Routing
       }
     end
 
-    def claim_due(now)
+    def claim_due(now, limit: nil)
       @mutex.synchronize do
-        @tasks.values.select { |task| task.due?(now) }.each(&:start!)
+        due = @tasks.values.select { |task| task.due?(now) }
+        due = due.first(limit) unless limit.nil?
+        due.each(&:start!)
       end
     end
 

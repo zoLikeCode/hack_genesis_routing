@@ -33,13 +33,14 @@ module Routing
     end
 
     def validate!(outcome)
-      Routing.assert(outcome.respond_to?(:to_h), "provider outcome must be a Hash")
+      raise IOError, "provider outcome must be a Hash" unless outcome.respond_to?(:to_h)
+
       result = outcome.to_h
-      Routing.assert(Decision::RESULTS.include?(result[:result]), "unknown simulated result #{result[:result]}")
-      Routing.assert(
-        result[:latency_sec].is_a?(Numeric) && result[:latency_sec] >= 0,
-        "latency_sec must be non-negative"
-      )
+      raise IOError, "unknown simulated result #{result[:result]}" unless Decision::RESULTS.include?(result[:result])
+      unless result[:latency_sec].is_a?(Numeric) && result[:latency_sec] >= 0
+        raise IOError, "latency_sec must be non-negative"
+      end
+
       result
     end
   end

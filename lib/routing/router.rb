@@ -12,15 +12,17 @@ module Routing
       end
     end
 
-    def self.call(operation:, providers:, snapshot:, policy:, attempted: [], temporarily_excluded: [])
-      new(operation, providers, snapshot, policy, attempted, temporarily_excluded).call
+    def self.call(operation:, providers:, snapshot:, policy:, attempted: [], temporarily_excluded: [], # rubocop:disable Metrics/ParameterLists
+                  hard_constraint_time: nil)
+      new(operation, providers, snapshot, policy, attempted, temporarily_excluded, hard_constraint_time).call
     end
 
-    def initialize(operation, providers, snapshot, policy, attempted, temporarily_excluded)
+    def initialize(operation, providers, snapshot, policy, attempted, temporarily_excluded, hard_constraint_time) # rubocop:disable Metrics/ParameterLists
       @operation = operation
       @providers = normalize_providers(providers)
       @snapshot = snapshot
       @policy = policy
+      @hard_constraint_time = hard_constraint_time
       validate!
       @attempted = normalize_names(attempted, "attempted")
       @temporarily_excluded = normalize_names(temporarily_excluded, "temporarily_excluded")
@@ -30,7 +32,8 @@ module Routing
       evaluation = HardConstraints::Filter.call(
         operation: @operation,
         providers: remaining_providers,
-        fallback: @policy.fallback_provider
+        fallback: @policy.fallback_provider,
+        at: @hard_constraint_time
       )
       ranking = SoftGoals::Ranker.call(
         eligible: evaluation.eligible,

@@ -32,8 +32,13 @@ module Routing
 
       def request(path, **payload)
         body = JSON.generate(payload)
-        response = with_timeout { internet.post("#{@base_url}#{path}", headers, body) }
-        parse(response)
+        response = nil
+        with_timeout do
+          response = internet.post("#{@base_url}#{path}", headers, body)
+          parse(response)
+        ensure
+          response.close if response.respond_to?(:close)
+        end
       end
 
       def with_timeout(&)
@@ -49,9 +54,11 @@ module Routing
       end
 
       def parse(response)
-        Routing.assert(response.success?, "async http request failed with #{response.status}")
+        raise IOError, "async http request failed with #{response.status}" unless response.success?
+
         data = JSON.parse(response.read)
-        Routing.assert(data.is_a?(Hash), "async http body must be a JSON object")
+        raise IOError, "async http body must be a JSON object" unless data.is_a?(Hash)
+
         {
           result: data["result"] || data[:result],
           latency_sec: data.fetch("latency_sec", data[:latency_sec] || 0)

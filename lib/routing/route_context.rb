@@ -4,7 +4,7 @@ module Routing
   class RouteContext
     attr_reader :attempts, :attempted, :temporarily_excluded, :total_latency
 
-    def initialize(attempts: [], attempted: [], temporarily_excluded: [], total_latency: 0)
+    def initialize(attempts: [], attempted: [], temporarily_excluded: [], total_latency: 0) # rubocop:disable Metrics/CyclomaticComplexity, Metrics/PerceivedComplexity
       Routing.assert(attempts.is_a?(Array) && attempts.all?(HardConstraints::Attempt),
                      "route context attempts must be Attempt objects")
       Routing.assert(attempted.is_a?(Array) && attempted.all? { |name| name.is_a?(String) && !name.empty? },

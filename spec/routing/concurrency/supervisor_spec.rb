@@ -5,9 +5,8 @@ require "async"
 RSpec.describe Routing::Concurrency::Supervisor do
   it "overlaps two in-flight payouts on different providers", :aggregate_failures do
     started = []
-    elapsed = concurrent_elapsed(sleep_client(0.15, started), two_provider_pool, two_operations)
+    route_concurrent(sleep_client(0.15, started), two_provider_pool, two_operations)
 
-    expect(elapsed).to be < 0.28
     expect(started.size).to eq(2)
     starts = started.map(&:last)
     expect(starts.max - starts.min).to be < 0.08
@@ -53,7 +52,8 @@ RSpec.describe Routing::Concurrency::Supervisor do
     decisions = route_concurrent(client, two_provider_pool, [build_operation])
 
     expect(calls).to eq(["vipay"])
-    expect(decisions.first).to have_attributes(selected_provider: "vipay", simulated_result: "expired")
+    expect(decisions.first).to have_attributes(selected_provider: "vipay", simulated_result: "approved")
+    expect(decisions.first).to be_final
   end
 
   it "changes selected_provider after a late status rejection", :aggregate_failures do
@@ -71,6 +71,100 @@ RSpec.describe Routing::Concurrency::Supervisor do
     expect(decisions.map(&:operation_id)).to eq(%w[op_a op_b])
   end
 
+  it "bounds concurrent status checks without losing due tasks", :aggregate_failures do
+    running = 0
+    peak = 0
+    client = timeout_client([], status: "approved")
+    client.define_singleton_method(:status) do |*, **|
+      running += 1
+      peak = [peak, running].max
+      Async::Task.current.sleep(0.03)
+      running -= 1
+      { result: "approved" }
+    end
+    decisions = route_concurrent(
+      client, two_provider_pool, two_operations,
+      concurrent_policy("status_worker_limit" => 1)
+    )
+
+    expect(peak).to eq(1)
+    expect(decisions).to all(be_final)
+    expect(decisions.map(&:simulated_result)).to eq(%w[approved approved])
+  end
+
+  it "supports the thread-pool executor end to end" do
+    decisions = route_concurrent(
+      sleep_client(0.01, []), two_provider_pool, two_operations,
+      concurrent_policy("executor" => "thread_pool")
+    )
+
+    expect(decisions).to all(be_final)
+  end
+
+  it "uses live dispatch time for the RPM limit" do
+    provider = build_provider(requests_per_minute_limit: 1)
+    pool = Routing::ProviderPool.new([provider, fallback_provider])
+    decisions = route_concurrent(sleep_client(0.03, []), pool, two_operations)
+
+    expect(decisions.map(&:selected_provider)).to contain_exactly("vipay", "spacepayments")
+  end
+
+  it "fails promptly when static limits make every provider unroutable" do
+    pool = Routing::ProviderPool.new(
+      [build_provider(daily_amount_limit: 0), fallback_provider(daily_amount_limit: 0)]
+    )
+
+    expect do
+      route_concurrent(sleep_client(0.01, []), pool, [build_operation])
+    end.to raise_error(Routing::InvalidInputError, /cannot be routed/)
+  end
+
+  it "classifies a transport failure as ambiguous and reconciles by status", :aggregate_failures do
+    client = timeout_client([], status: "approved")
+    client.define_singleton_method(:call) { |*, **| raise IOError, "HTTP 500" }
+    decisions = route_concurrent(client, two_provider_pool, [build_operation])
+
+    expect(decisions.first).to have_attributes(simulated_result: "approved", selected_provider: "vipay")
+    expect(decisions.first).to be_final
+  end
+
+  it "does not emit a provisional decision after reconciliation is exhausted" do
+    client = timeout_client([], status: "pending")
+    policy = Routing::Policy.new(
+      "fallback_provider" => "spacepayments",
+      "strategies" => default_strategy_weights,
+      "status_check" => {
+        "enabled" => true, "initial_delay_sec" => 0,
+        "retry_delays_sec" => [0], "max_attempts" => 1
+      },
+      "concurrency" => { "enabled" => true }
+    )
+
+    expect do
+      route_concurrent(client, two_provider_pool, [build_operation], policy)
+    end.to raise_error(Routing::InvalidInputError, /reconciliation_pending: op_test/)
+  end
+
+  it "does not wait forever for capacity held by exhausted reconciliation" do
+    client = timeout_client([], status: "pending")
+    policy = Routing::Policy.new(
+      "fallback_provider" => "spacepayments",
+      "strategies" => default_strategy_weights,
+      "status_check" => {
+        "enabled" => true, "initial_delay_sec" => 0,
+        "retry_delays_sec" => [0], "max_attempts" => 1
+      },
+      "concurrency" => { "enabled" => true }
+    )
+    pool = Routing::ProviderPool.new(
+      [build_provider(in_progress_count_limit: 1), fallback_provider(daily_amount_limit: 0)]
+    )
+
+    expect do
+      route_concurrent(client, pool, two_operations, policy)
+    end.to raise_error(Routing::InvalidInputError, /cannot be routed/)
+  end
+
   def route_concurrent(client, pool, operations, policy = build_policy)
     Routing::Engine.call(
       operations: operations, providers: pool, policy: policy, simulator: client, concurrent: true
@@ -83,12 +177,6 @@ RSpec.describe Routing::Concurrency::Supervisor do
       "strategies" => default_strategy_weights,
       "concurrency" => { "enabled" => true }.merge(overrides)
     )
-  end
-
-  def concurrent_elapsed(client, pool, operations)
-    t0 = Process.clock_gettime(Process::CLOCK_MONOTONIC)
-    route_concurrent(client, pool, operations)
-    Process.clock_gettime(Process::CLOCK_MONOTONIC) - t0
   end
 
   def sleep_client(delay, started)

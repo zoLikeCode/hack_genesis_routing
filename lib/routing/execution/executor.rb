@@ -11,6 +11,10 @@ module Routing
         raise NotImplementedError, "#{self.class}#submit"
       end
 
+      def available_slots
+        raise NotImplementedError, "#{self.class}#available_slots"
+      end
+
       def shutdown
         raise NotImplementedError, "#{self.class}#shutdown"
       end

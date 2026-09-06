@@ -51,10 +51,17 @@ module Routing
       end
 
       def handle_status(payload)
-        return unless payload.fetch("result") == "rejected"
+        if payload.fetch("result") == "approved"
+          @engine.finalize_status_decision!(payload)
+          return
+        end
 
         item = @engine.status_cascade_item(payload)
-        @inbound.push(item) unless item.nil?
+        if item.nil?
+          @engine.finalize_status_decision!(payload)
+        else
+          @inbound.push(item)
+        end
       end
 
       def timeout_time(operation, context)

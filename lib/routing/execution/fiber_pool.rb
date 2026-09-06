@@ -17,7 +17,11 @@ module Routing
       end
 
       def try_submit # rubocop:disable Naming/PredicateMethod
-        @in_flight < @limit
+        available_slots.positive?
+      end
+
+      def available_slots
+        @limit - @in_flight
       end
 
       def submit

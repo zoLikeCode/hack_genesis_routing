@@ -34,4 +34,12 @@ RSpec.describe Routing::Metrics::Window do
     expect(window.rewrite_status(operation_id: "old", status: "approved")).to be_nil
     expect(window.observations.map(&:operation_id)).to eq(%w[new newest])
   end
+
+  it "keeps a sequenced runtime attempt ahead of legacy observations" do
+    window = described_class.new(max_observations: 1)
+    window.record(build_observation(operation_id: "legacy", admission_sequence: nil))
+    window.record(build_observation(operation_id: "runtime", admission_sequence: 1))
+
+    expect(window.observations.map(&:operation_id)).to eq(["runtime"])
+  end
 end

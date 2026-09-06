@@ -3,16 +3,17 @@
 module Routing
   module HardConstraints
     class Filter
-      def self.call(operation:, providers:, fallback: "spacepayments")
-        new(operation, providers, fallback).call
+      def self.call(operation:, providers:, fallback: "spacepayments", at: nil)
+        new(operation, providers, fallback, at).call
       end
 
-      def initialize(operation, providers, fallback)
+      def initialize(operation, providers, fallback, at)
         Routing.assert(operation.is_a?(Operation), "operation must be Routing::Operation")
         Routing.assert(fallback.is_a?(String) && !fallback.empty?, "fallback name required")
         @operation = operation
         @providers = providers
         @fallback = fallback
+        @at = at
       end
 
       def call
@@ -42,7 +43,7 @@ module Routing
       end
 
       def evaluate(provider)
-        HardConstraints.evaluate(provider, @operation)
+        HardConstraints.evaluate(provider, @operation, at: @at)
       end
 
       def skip_attempt(provider, result)

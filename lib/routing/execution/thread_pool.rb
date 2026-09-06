@@ -14,8 +14,12 @@ module Routing
         @workers = Array.new(limit) { Thread.new { run_worker } }
       end
 
-      def try_submit
-        @mutex.synchronize { @in_flight < @limit }
+      def try_submit # rubocop:disable Naming/PredicateMethod
+        available_slots.positive?
+      end
+
+      def available_slots
+        @mutex.synchronize { @limit - @in_flight }
       end
 
       def submit(&work)

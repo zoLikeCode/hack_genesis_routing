@@ -11,7 +11,7 @@ RSpec.describe Routing::RouteContext do
     expect(context.attempted).to eq(["payflow"])
   end
 
-  it "clears only pass-local exclusions" do
+  it "clears only pass-local exclusions", :aggregate_failures do
     context.exclude_temporarily!("vipay")
     context.mark_attempted!("payflow")
     context.clear_temporarily_excluded!

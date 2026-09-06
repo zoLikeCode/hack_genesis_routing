@@ -5,21 +5,22 @@ module Routing
     class SettlementQueue
       def initialize(progress:)
         @items = []
+        @mutex = Mutex.new
         @progress = progress
       end
 
       def push(event)
-        @items << event
+        @mutex.synchronize { @items << event }
         @progress.signal
         self
       end
 
       def shift
-        @items.shift
+        @mutex.synchronize { @items.shift }
       end
 
       def empty?
-        @items.empty?
+        @mutex.synchronize { @items.empty? }
       end
     end
   end

@@ -1,7 +1,7 @@
 # frozen_string_literal: true
 
 RSpec.describe Routing::Settlement do
-  it "releases a definite miss without recording an attempted payout", :aggregate_failures do
+  it "releases a definite miss without recording an attempted payout", :aggregate_failures do # rubocop:disable RSpec/ExampleLength
     provider = build_provider
     pool = Routing::ProviderPool.new([provider, fallback])
     state = Routing::RuntimeState.new(pool)

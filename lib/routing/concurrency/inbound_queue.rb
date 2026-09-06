@@ -5,33 +5,34 @@ module Routing
     class InboundQueue
       def initialize(progress:)
         @items = []
+        @mutex = Mutex.new
         @progress = progress
       end
 
       def push(item)
         Routing.assert(item.is_a?(WorkItem), "inbound queue requires WorkItem")
-        @items << item
+        @mutex.synchronize { @items << item }
         @progress.signal
         self
       end
 
       def unshift(item)
         Routing.assert(item.is_a?(WorkItem), "inbound queue requires WorkItem")
-        @items.unshift(item)
+        @mutex.synchronize { @items.unshift(item) }
         @progress.signal
         self
       end
 
       def shift
-        @items.shift
+        @mutex.synchronize { @items.shift }
       end
 
       def empty?
-        @items.empty?
+        @mutex.synchronize { @items.empty? }
       end
 
       def size
-        @items.size
+        @mutex.synchronize { @items.size }
       end
     end
   end
