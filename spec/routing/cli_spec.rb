@@ -36,13 +36,22 @@ RSpec.describe Routing::CLI do
     expect(described_class.start(["--providers", "missing-providers.json"])).to eq(1)
   end
 
+  it "overrides concurrent policy with sequential simulation", :aggregate_failures do
+    with_cli_output do |decisions, report|
+      allow(Routing::Concurrency::Supervisor).to receive(:call).and_call_original
+      expect(run_cli(decisions, report, "--no-concurrent")).to eq(0)
+      expect(Routing::Concurrency::Supervisor).not_to have_received(:call)
+      expect(validate(decisions)).to be_success
+    end
+  end
+
   def with_cli_output
     Dir.mktmpdir do |dir|
       yield File.join(dir, "routing_decisions_test.json"), File.join(dir, "routing_report_test.json")
     end
   end
 
-  def run_cli(decisions, report)
+  def run_cli(decisions, report, *flags)
     described_class.start(
       [
         "--providers", File.join(SPEC_ROOT, "data/providers.json"),
@@ -51,7 +60,7 @@ RSpec.describe Routing::CLI do
         "--history", File.join(SPEC_ROOT, "data/operations_history.csv"),
         "--decisions", decisions,
         "--report", report,
-        "--runtime", "#{report}.runtime.json"
+        "--runtime", "#{report}.runtime.json", *flags
       ]
     )
   end

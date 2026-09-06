@@ -42,8 +42,8 @@ RSpec.describe Routing::Policy do
       expect(policy.status_check).to include("enabled" => true, "initial_delay_sec" => 5, "max_attempts" => 5)
     end
 
-    it "defaults concurrent execution off" do
-      expect(policy.concurrency).to include("enabled" => false, "executor" => "fiber_pool")
+    it "loads concurrent execution enabled in the project policy" do
+      expect(policy.concurrency).to include("enabled" => true, "executor" => "fiber_pool")
     end
   end
 

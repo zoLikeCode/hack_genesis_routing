@@ -54,8 +54,11 @@ module Routing
     end
 
     def add_flag_options(opts, options)
-      opts.on("--concurrent", "Overlap provider I/O using the fiber executor") do
-        options[:concurrent] = true
+      opts.on("--replay", "Replay created_at groups, cap gaps at 30s, simulate at 100x speed") do
+        options[:replay] = true
+      end
+      opts.on("--[no-]concurrent", "Concurrent I/O, or sequential simulation using created_at") do |value|
+        options[:concurrent] = value
       end
       opts.on("-h", "--help", "Show help") do
         puts opts
@@ -83,6 +86,8 @@ module Routing
     end
 
     def engine_options(options)
+      return { concurrent: true, replay: true } if options[:replay]
+
       return {} unless options.key?(:concurrent)
 
       { concurrent: options[:concurrent] }

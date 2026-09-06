@@ -65,9 +65,7 @@ module Routing
       end
 
       def timeout_time(operation, context)
-        return @clock.wall if operation.created_at.nil?
-
-        operation.created_at + context.total_latency
+        @clock.timeout_time(operation, context)
       end
     end
   end

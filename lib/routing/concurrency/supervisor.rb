@@ -12,9 +12,10 @@ module Routing
       def initialize(engine)
         Routing.assert(engine.is_a?(Engine), "supervisor requires Engine")
         @engine = engine
-        @clock = Clock.new
+        @clock = engine.replay&.clock || Clock.new
         @payouts = 0
         @statuses = 0
+        @feeding = true
         @lock = Mutex.new
       end
 
@@ -39,11 +40,12 @@ module Routing
 
       def run(task)
         setup(task)
-        enqueue_operations
+        feeder = task.async { |child| feed_operations(child) }
         settlement_task = task.async { settlement_loop }
         status_task = task.async { status_loop(task) }
         begin
           admission_loop(task)
+          feeder.wait
           settlement_task.wait
           status_task.wait
         rescue Exception # rubocop:disable Lint/RescueException
@@ -52,6 +54,7 @@ module Routing
           status_task.stop
           raise
         ensure
+          feeder.stop
           @slots.shutdown
           @status_pool.shutdown
           @persist.shutdown
@@ -104,11 +107,9 @@ module Routing
         Routing.assert(false, "unknown executor #{name}")
       end
 
-      def enqueue_operations
-        @engine.operations.each do |operation|
-          @engine.track_operation!(operation)
-          @inbound.push(WorkItem.new(operation, RouteContext.new))
-        end
+      def enqueue_operation(operation)
+        @engine.track_operation!(operation)
+        @inbound.push(WorkItem.new(operation, RouteContext.new))
       end
 
       def admission_loop(task)
@@ -179,6 +180,17 @@ module Routing
         wait_for_progress(task, delay, after: after, key: :status)
       end
 
+      def feed_operations(task)
+        if @engine.replay
+          @engine.replay.feed(task) { |operation| enqueue_operation(operation) }
+        else
+          @engine.operations.each { |operation| enqueue_operation(operation) }
+        end
+      ensure
+        @feeding = false
+        @progress.signal
+      end
+
       def wait_for_capacity(task, after:)
         task.sleep(0)
         now = @clock.monotonic
@@ -193,7 +205,7 @@ module Routing
         if delay <= 0
           task.sleep(0)
         else
-          task.with_timeout(delay) { @progress.wait(key: key, after: after) }
+          task.with_timeout(@clock.real_delay(delay)) { @progress.wait(key: key, after: after) }
         end
       rescue Async::TimeoutError
         nil
@@ -208,7 +220,7 @@ module Routing
 
       def finished?
         @lock.synchronize do
-          @inbound.empty? && @events.empty? && @payouts.zero? && @statuses.zero? &&
+          !@feeding && @inbound.empty? && @events.empty? && @payouts.zero? && @statuses.zero? &&
             !@engine.status_checker.active?
         end
       end

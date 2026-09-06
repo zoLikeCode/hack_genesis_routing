@@ -14,7 +14,7 @@ RSpec.describe "seed-1 public-queue characterization" do
       providers, history: history, metrics_config: policy.metrics, policy: policy
     )
     Routing::Engine.call(
-      operations: operations, providers: providers, policy: policy, state: state
+      operations: operations, providers: providers, policy: policy, state: state, concurrent: false
     ).map(&:to_h)
   end
 

@@ -12,7 +12,7 @@ module Routing
 
     attr_reader :state, :status_checker, :status_check_runner, :circuit_breaker,
                 :admission, :settlement, :operations, :providers, :policy,
-                :runtime_store, :decisions_by_id, :operations_by_id
+                :runtime_store, :decisions_by_id, :operations_by_id, :replay
 
     def self.call(operations:, providers:, policy:, simulator: nil, state: nil, **) # rubocop:disable Metrics/ParameterLists
       new(operations, providers, policy, simulator, state: state, **).call

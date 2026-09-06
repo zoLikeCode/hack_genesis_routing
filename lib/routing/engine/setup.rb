@@ -23,6 +23,16 @@ module Routing
                        "runtime_store must be Routing::RuntimeStore")
         Routing.assert(@state.is_a?(RuntimeState), "state must be Routing::RuntimeState")
         Routing.assert(@state.providers.equal?(@providers), "runtime state must own the provider pool")
+        initialize_replay!(options)
+      end
+
+      def initialize_replay!(options)
+        return unless options[:replay]
+
+        Routing.input!(@concurrent, "replay requires concurrent mode")
+        Routing.input!(@policy.concurrency.fetch("executor") == "fiber_pool", "replay requires fiber_pool")
+        @replay = Replay.new(@operations)
+        @simulator = ReplaySimulator.new(client: @simulator, clock: @replay.clock)
       end
 
       def initialize_status_checks!
