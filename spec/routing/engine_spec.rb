@@ -47,6 +47,28 @@ RSpec.describe Routing::Engine do
       expect(fallback_decision.attempts.map(&:reason)).to include("fallback_selected")
     end
 
+    it "excludes a provider after its unresolved circuit breaker opens", :aggregate_failures do
+      providers = two_primary_pool
+      policy = Routing::Policy.new(
+        "circuit_breaker" => {
+          "enabled" => true, "unresolved_count_limit" => 1, "unresolved_amount_limit" => 1_000_000
+        },
+        "strategies" => { "cascade_priority" => { "enabled" => true, "weight" => 1.0 } }
+      )
+      engine = described_class.new([build_operation], providers, policy, sequenced_simulator(%w[approved]))
+      unresolved = Routing::Reservation.new(
+        operation: build_operation(operation_id: "unresolved"), provider_name: "vipay"
+      )
+      engine.circuit_breaker.record_unresolved!(unresolved)
+
+      decision = engine.call.first
+
+      expect(decision.selected_provider).to eq("payflow")
+      expect(decision.attempts).to include(
+        have_attributes(provider: "vipay", decision: "skipped", reason: "circuit_breaker_open")
+      )
+    end
+
     it "rolls a rejected final fallback out of traffic share", :aggregate_failures do
       decisions = rejected_fallback_decisions
 
@@ -94,21 +116,14 @@ RSpec.describe Routing::Engine do
     end
 
     it "runs due status checks before routing the next online operation", :aggregate_failures do
-      providers = two_primary_pool
-      client = status_client(call_results: %w[expired approved], status_results: %w[cancelled])
-      policy = Routing::Policy.new(
-        "status_check" => status_check_config,
-        "strategies" => { "cascade_priority" => { "enabled" => true, "weight" => 1.0 } }
-      )
-      operations = [
-        build_operation(operation_id: "timed_out"),
-        build_operation(operation_id: "next", created_at: "2026-07-30T09:06:00+03:00")
-      ]
-
-      engine = described_class.new(operations, providers, policy, client)
+      engine, client = online_status_engine
       decisions = engine.call
 
-      expect(decisions.first).to have_attributes(selected_provider: "vipay", simulated_result: "expired")
+      first = decisions.first
+      expect(first).to have_attributes(selected_provider: "payflow", simulated_result: "approved")
+      expect(first.attempts).to include(
+        have_attributes(provider: "vipay", decision: "skipped", reason: "status_check_rejected")
+      )
       expect(decisions.last).to have_attributes(selected_provider: "vipay", simulated_result: "approved")
       expect(client.status_requests).to eq([["timed_out", "timed_out:vipay"]])
       expect(engine.status_checker.tasks.first).to have_attributes(status: "resolved", last_result: "rejected")
@@ -119,10 +134,7 @@ RSpec.describe Routing::Engine do
     it "settles a timeout from the end of the batch", :aggregate_failures do
       providers = two_primary_pool
       client = status_client(call_results: %w[expired], status_results: %w[approved])
-      policy = Routing::Policy.new(
-        "status_check" => status_check_config,
-        "strategies" => { "cascade_priority" => { "enabled" => true, "weight" => 1.0 } }
-      )
+      policy = status_policy
 
       engine = described_class.new([build_operation], providers, policy, client)
       decision = engine.call.first
@@ -133,22 +145,45 @@ RSpec.describe Routing::Engine do
       expect(providers.fetch("vipay")).to have_attributes(in_progress_count: 0, daily_reserved_amount: 0)
     end
 
-    it "rolls back a late refusal without starting fallback", :aggregate_failures do
+    it "rolls back a late refusal and reroutes on a fresh snapshot", :aggregate_failures do
       providers = two_primary_pool
       client = status_client(call_results: %w[expired], status_results: %w[cancelled])
-      policy = Routing::Policy.new(
-        "status_check" => status_check_config,
-        "strategies" => { "cascade_priority" => { "enabled" => true, "weight" => 1.0 } }
-      )
+      policy = status_policy
 
       engine = described_class.new([build_operation], providers, policy, client)
       decision = engine.call.first
 
       expect(decision.attempts.count { |attempt| attempt.decision == "selected" }).to eq(1)
-      expect(decision.selected_provider).to eq("vipay")
+      expect(decision.selected_provider).to eq("payflow")
+      expect(decision.simulated_result).to eq("approved")
+      expect(decision.attempts).to include(
+        have_attributes(provider: "vipay", decision: "skipped", reason: "status_check_rejected")
+      )
       expect(engine.state.reservations.first.status).to eq("rejected")
       expect(providers.fetch("vipay")).to have_attributes(
         in_progress_count: 0, in_progress_amount: 0, daily_reserved_amount: 0
+      )
+    end
+
+    it "never retries a provider already called by an earlier timeout cascade", :aggregate_failures do
+      providers = two_primary_pool
+      client = status_client(
+        call_results: %w[expired expired approved],
+        status_results: %w[cancelled cancelled]
+      )
+
+      engine = described_class.new([build_operation], providers, status_policy, client)
+      decision = engine.call.first
+
+      expect(decision).to have_attributes(
+        selected_provider: "spacepayments", simulated_result: "approved"
+      )
+      expect(decision.attempts).to include(
+        have_attributes(provider: "vipay", decision: "skipped", reason: "status_check_rejected"),
+        have_attributes(provider: "payflow", decision: "skipped", reason: "status_check_rejected")
+      )
+      expect(engine.state.reservations.map { |reservation| [reservation.provider_name, reservation.status] }).to eq(
+        [%w[vipay rejected], %w[payflow rejected], %w[spacepayments approved]]
       )
     end
 
@@ -399,6 +434,22 @@ RSpec.describe Routing::Engine do
         "retry_delays_sec" => [10],
         "max_attempts" => 3
       }
+    end
+
+    def status_policy
+      Routing::Policy.new(
+        "status_check" => status_check_config,
+        "strategies" => { "cascade_priority" => { "enabled" => true, "weight" => 1.0 } }
+      )
+    end
+
+    def online_status_engine
+      client = status_client(call_results: %w[expired approved], status_results: %w[cancelled])
+      operations = [
+        build_operation(operation_id: "timed_out"),
+        build_operation(operation_id: "next", created_at: "2026-07-30T09:06:00+03:00")
+      ]
+      [described_class.new(operations, two_primary_pool, status_policy, client), client]
     end
   end
 end

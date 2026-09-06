@@ -22,6 +22,8 @@ ruby bin/route --help
 ruby bin/console
 ```
 
+The route command also writes `routing_runtime_state.json` by default. Use `--runtime PATH` to change its location.
+
 Validate your own output:
 
 ```bash
@@ -87,23 +89,30 @@ Pending count, volume, daily capacity, and in-progress load are visible to subse
 - `rejected`: roll back provisional counters and reroute through the next eligible provider on a fresh snapshot;
 - `expired`: keep the reservation, treat the provider as the current final selection, and do not start fallback before a
   status-check;
-- late cancellation: call `RuntimeState#resolve_timeout!` to compensate current counters without replaying earlier decisions.
+- late cancellation: atomically release the reservation and reroute that operation on a fresh snapshot without replaying
+  decisions already made for other operations.
 
 `Routing::StatusChecker` registers every timed-out reservation. `Routing::StatusCheckRunner` executes checks due before the next
 online operation and drains the remaining schedule after a finite queue has been routed, advancing logical test time instead of
 sleeping. This means a timeout on the final queue item is still resolved. `approved` commits the reservation,
 `rejected`/`cancelled` atomically releases it, and `pending`/`processing`/another timeout is retried with the delays from
-`status_check.retry_delays_sec`. Provider and transport errors follow the same retry path. Once `max_attempts` is reached, the
-task moves to `manual_review`; its reservation remains held because an unknown result must never trigger an unsafe fallback.
+`status_check.retry_delays_sec`. Provider and transport errors follow the same retry path. Once the finite `max_attempts`
+budget is reached, the task moves to `reconciliation_pending` and active polling stops. Its reservation remains held because
+an unknown result must never trigger an unsafe fallback.
 Status-check tasks are deduplicated by the same idempotency key as the original payout request. A terminal response that
-conflicts with an already-settled reservation also moves to `manual_review` without rewriting the first terminal result.
+conflicts with an already-settled reservation also moves to `reconciliation_pending` without rewriting the first terminal
+result.
 Long-lived hosts can start `engine.status_check_runner`; scheduling a timeout wakes that single runner, which waits for the
 nearest `next_check_at` and therefore does not depend on another operation arriving. The finite JSON replay uses `drain`
 instead, so configured delays advance logical time and never make the CLI sleep.
 
-The supplied simulator implements both `call` and `status`. A real provider adapter must expose the same two methods. Current
-status-check tasks are kept in the process runtime; durable storage is still required before using this implementation across
-process restarts.
+When unresolved count or amount reaches the configured circuit-breaker threshold, the provider is excluded from new routes
+with the explicit `circuit_breaker_open` reason. The existing hard-constraint implementation remains unchanged.
+
+The supplied simulator implements both `call` and `status`. A real provider adapter must expose the same two methods. The CLI
+rewrites `routing_runtime_state.json` through a temporary file after reservation and status transitions. It contains provider
+counters, reservations, metrics, status-check tasks, and circuit-breaker state. Automatic restoration after process restart is
+not attempted because the case has no real provider recovery API; the JSON is a durable reconciliation and audit snapshot.
 
 Every provider attempt receives a stable `<operation_id>:<provider>` idempotency key when the provider client accepts keyword
 context. Decision details include the selected profile, conversion source/scope/sample size/prior, normalized strategy weights,

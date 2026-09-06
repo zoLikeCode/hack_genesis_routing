@@ -27,6 +27,17 @@ module Routing
       payload.map { |row| new(row) }
     end
 
+    def to_h
+      {
+        "operation_id" => id,
+        "amount" => amount,
+        "bank" => bank,
+        "created_at" => created_at&.iso8601,
+        "card_brand" => card_brand,
+        "payout_requisite" => payout_requisite
+      }
+    end
+
     private
 
     def stringify_keys(attrs)

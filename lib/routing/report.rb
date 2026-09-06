@@ -10,23 +10,36 @@ module Routing
     end
 
     def initialize(decisions, operations, providers, policy, options)
-      history = options[:history]
-      runtime_state = options[:runtime_state]
-      status_checker = options[:status_checker]
-      Routing.assert(decisions.is_a?(Array) && decisions.all?(Decision), "decisions must be Decision objects")
-      Routing.assert(operations.respond_to?(:each), "operations must be enumerable")
-      Routing.assert(providers.is_a?(ProviderPool), "providers must be a ProviderPool")
-      Routing.assert(policy.is_a?(Policy), "policy must be Routing::Policy")
-      Routing.assert(history.nil? || history.is_a?(History), "history must be Routing::History")
-      Routing.assert(runtime_state.nil? || runtime_state.is_a?(RuntimeState), "runtime_state must be RuntimeState")
-      Routing.assert(status_checker.nil? || status_checker.is_a?(StatusChecker), "status_checker must be StatusChecker")
+      assign_inputs(decisions, operations, providers, policy)
+      assign_options(options)
+      validate_inputs!
+    end
+
+    def assign_inputs(decisions, operations, providers, policy)
       @decisions = decisions
       @operations = operations
       @providers = providers
       @policy = policy
-      @history = history
-      @runtime_state = runtime_state
-      @status_checker = status_checker
+    end
+
+    def assign_options(options)
+      @history = options[:history]
+      @runtime_state = options[:runtime_state]
+      @status_checker = options[:status_checker]
+      @circuit_breaker = options[:circuit_breaker] || @status_checker&.circuit_breaker
+    end
+
+    def validate_inputs!
+      Routing.assert(@decisions.is_a?(Array) && @decisions.all?(Decision), "decisions must be Decision objects")
+      Routing.assert(@operations.respond_to?(:each), "operations must be enumerable")
+      Routing.assert(@providers.is_a?(ProviderPool), "providers must be a ProviderPool")
+      Routing.assert(@policy.is_a?(Policy), "policy must be Routing::Policy")
+      Routing.assert(@history.nil? || @history.is_a?(History), "history must be Routing::History")
+      Routing.assert(@runtime_state.nil? || @runtime_state.is_a?(RuntimeState), "runtime_state must be RuntimeState")
+      Routing.assert(@status_checker.nil? || @status_checker.is_a?(StatusChecker),
+                     "status_checker must be StatusChecker")
+      Routing.assert(@circuit_breaker.nil? || @circuit_breaker.is_a?(CircuitBreaker),
+                     "circuit_breaker must be CircuitBreaker")
     end
 
     def call
@@ -44,6 +57,7 @@ module Routing
         "skip_reasons" => skip_reasons,
         "projected_daily_utilization" => projected_daily_utilization,
         "status_checks" => status_check_summary,
+        "circuit_breakers" => circuit_breaker_summary,
         "recommendations" => recommendations
       }
     end
@@ -199,11 +213,16 @@ module Routing
     def status_check_summary
       if @status_checker.nil?
         return {
-          "scheduled" => 0, "checking" => 0, "resolved" => 0, "manual_review" => 0, "tasks" => []
+          "scheduled" => 0, "checking" => 0, "resolved" => 0,
+          "reconciliation_pending" => 0, "tasks" => []
         }
       end
 
       @status_checker.summary
+    end
+
+    def circuit_breaker_summary
+      @circuit_breaker.nil? ? {} : @circuit_breaker.summary
     end
 
     def provider_metrics

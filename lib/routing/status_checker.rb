@@ -5,9 +5,9 @@ module Routing
     TERMINAL_RESULTS = %w[approved rejected cancelled].freeze
     RETRY_RESULTS = %w[pending processing expired unknown].freeze
 
-    attr_reader :state, :providers
+    attr_reader :state, :providers, :circuit_breaker
 
-    def initialize(state:, providers:, client:, config:)
+    def initialize(state:, providers:, client:, config:, circuit_breaker: nil)
       Routing.assert(state.is_a?(RuntimeState), "status checker requires RuntimeState")
       Routing.assert(providers.is_a?(ProviderPool), "status checker requires ProviderPool")
       Routing.assert(config.respond_to?(:to_h), "status check config must be a Hash")
@@ -15,6 +15,7 @@ module Routing
       @providers = providers
       @client = client
       @config = config.to_h
+      @circuit_breaker = circuit_breaker || CircuitBreaker.disabled
       @tasks = {}
       @mutex = Mutex.new
     end
@@ -60,7 +61,7 @@ module Routing
         "scheduled" => counts.fetch("scheduled", 0),
         "checking" => counts.fetch("checking", 0),
         "resolved" => counts.fetch("resolved", 0),
-        "manual_review" => counts.fetch("manual_review", 0),
+        "reconciliation_pending" => counts.fetch("reconciliation_pending", 0),
         "tasks" => snapshot.map(&:to_h)
       }
     end
@@ -84,7 +85,10 @@ module Routing
     end
 
     def empty_run
-      { "checked" => 0, "resolved" => 0, "rescheduled" => 0, "manual_review" => 0 }
+      {
+        "checked" => 0, "resolved" => 0, "rescheduled" => 0,
+        "reconciliation_pending" => 0, "settlements" => []
+      }
     end
 
     def claim_due(now)
@@ -119,12 +123,12 @@ module Routing
 
       @mutex.synchronize { task.resolve!(result: reservation.status) }
       totals["resolved"] += 1
+      totals["settlements"] << settlement(task, reservation.status)
     end
 
     def resolve_conflict(task, status, reservation, totals)
       error = "status-check returned #{status}, but reservation is already #{reservation.status}"
-      @mutex.synchronize { task.manual_review!(result: status, error: error) }
-      totals["manual_review"] += 1
+      move_to_reconciliation(task, status, totals, error: error)
     end
 
     def expected_settlement(status)
@@ -133,14 +137,27 @@ module Routing
 
     def retry_or_escalate(task, now, status, totals, error: nil)
       if task.attempts >= max_attempts
-        @mutex.synchronize { task.manual_review!(result: status, error: error) }
-        totals["manual_review"] += 1
+        move_to_reconciliation(task, status, totals, error: error)
         return
       end
 
       delay = retry_delays.fetch([task.attempts - 1, retry_delays.size - 1].min)
       @mutex.synchronize { task.reschedule!(at: now + delay, result: status, error: error) }
       totals["rescheduled"] += 1
+    end
+
+    def move_to_reconciliation(task, status, totals, error: nil)
+      @mutex.synchronize { task.reconciliation_pending!(result: status, error: error) }
+      circuit_breaker.record_unresolved!(task.reservation)
+      totals["reconciliation_pending"] += 1
+    end
+
+    def settlement(task, result)
+      {
+        "operation_id" => task.reservation.operation_id,
+        "provider" => task.reservation.provider_name,
+        "result" => result
+      }.freeze
     end
   end
 end

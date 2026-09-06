@@ -1,0 +1,476 @@
+{
+  "period": "2026-07-30",
+  "total_operations": 200,
+  "distribution": {
+    "vipay": {
+      "count": 32,
+      "share_pct": 16,
+      "target_pct": 40,
+      "deviation_pct": -24
+    },
+    "payflow": {
+      "count": 18,
+      "share_pct": 9,
+      "target_pct": 35,
+      "deviation_pct": -26
+    },
+    "quickpay": {
+      "count": 87,
+      "share_pct": 44,
+      "target_pct": 25,
+      "deviation_pct": 19
+    },
+    "spacepayments": {
+      "count": 61,
+      "share_pct": 31,
+      "target_pct": 0,
+      "deviation_pct": 31
+    }
+  },
+  "outcomes": {
+    "vipay": {
+      "attempted": 36,
+      "approved": 32,
+      "rejected": 4,
+      "expired": 0,
+      "approval_pct": 88.9,
+      "initial_approved": 32,
+      "initial_rejected": 4,
+      "initial_timeouts": 0,
+      "initial_conversion_pct": 88.9,
+      "initial_answer_success_pct": 88.9,
+      "final_approved": 32,
+      "final_rejected": 4,
+      "final_unresolved": 0,
+      "avg_final_latency_sec": 38.0
+    },
+    "payflow": {
+      "attempted": 19,
+      "approved": 18,
+      "rejected": 1,
+      "expired": 0,
+      "approval_pct": 94.7,
+      "initial_approved": 17,
+      "initial_rejected": 1,
+      "initial_timeouts": 1,
+      "initial_conversion_pct": 89.5,
+      "initial_answer_success_pct": 94.4,
+      "final_approved": 18,
+      "final_rejected": 1,
+      "final_unresolved": 0,
+      "avg_final_latency_sec": 54.1
+    },
+    "quickpay": {
+      "attempted": 97,
+      "approved": 87,
+      "rejected": 10,
+      "expired": 0,
+      "approval_pct": 89.7,
+      "initial_approved": 74,
+      "initial_rejected": 10,
+      "initial_timeouts": 13,
+      "initial_conversion_pct": 76.3,
+      "initial_answer_success_pct": 88.1,
+      "final_approved": 87,
+      "final_rejected": 10,
+      "final_unresolved": 0,
+      "avg_final_latency_sec": 30.3
+    },
+    "spacepayments": {
+      "attempted": 63,
+      "approved": 61,
+      "rejected": 2,
+      "expired": 0,
+      "approval_pct": 96.8,
+      "initial_approved": 60,
+      "initial_rejected": 2,
+      "initial_timeouts": 1,
+      "initial_conversion_pct": 95.2,
+      "initial_answer_success_pct": 96.8,
+      "final_approved": 61,
+      "final_rejected": 2,
+      "final_unresolved": 0,
+      "avg_final_latency_sec": 22.3
+    }
+  },
+  "history_baseline": {
+    "vipay": {
+      "count": 41,
+      "approved_count": 32,
+      "volume": 1067000.0,
+      "attempted_volume": 1219000.0,
+      "conversion": 0.7804878048780488,
+      "avg_latency_sec": 87.29268292682927
+    },
+    "quickpay": {
+      "count": 40,
+      "approved_count": 27,
+      "volume": 1115500.0,
+      "attempted_volume": 1885000.0,
+      "conversion": 0.675,
+      "avg_latency_sec": 129.975
+    },
+    "payflow": {
+      "count": 19,
+      "approved_count": 9,
+      "volume": 116500.0,
+      "attempted_volume": 287500.0,
+      "conversion": 0.47368421052631576,
+      "avg_latency_sec": 278.05263157894734
+    }
+  },
+  "provider_metrics": {
+    "vipay": {
+      "conversion_estimate": 0.8875,
+      "source": "provider_history",
+      "scope": "provider",
+      "sample_size": 46,
+      "prior": 0.87,
+      "initial_approved": 41,
+      "initial_rejected": 5,
+      "initial_timeouts": 0,
+      "initial_conversion": 0.8913,
+      "initial_timeout_rate": 0.0,
+      "initial_refusal_rate": 0.1087,
+      "initial_answer_success": 0.8913,
+      "final_approved": 41,
+      "final_rejected": 5,
+      "unresolved": 0,
+      "p90_initial_latency_sec": 62.5,
+      "latency_sample_size": 46,
+      "last_observation_at": "2026-07-30T09:24:28+03:00",
+      "data_age_sec": 10.0
+    },
+    "payflow": {
+      "conversion_estimate": 0.8818,
+      "source": "provider_history",
+      "scope": "provider",
+      "sample_size": 23,
+      "prior": 0.91,
+      "initial_approved": 20,
+      "initial_rejected": 2,
+      "initial_timeouts": 1,
+      "initial_conversion": 0.8696,
+      "initial_timeout_rate": 0.0435,
+      "initial_refusal_rate": 0.087,
+      "initial_answer_success": 0.9091,
+      "final_approved": 21,
+      "final_rejected": 2,
+      "unresolved": 0,
+      "p90_initial_latency_sec": 98.70000000000003,
+      "latency_sample_size": 22,
+      "last_observation_at": "2026-07-30T09:24:06+03:00",
+      "data_age_sec": 32.0
+    },
+    "quickpay": {
+      "conversion_estimate": 0.7483,
+      "source": "provider_history",
+      "scope": "provider",
+      "sample_size": 50,
+      "prior": 0.79,
+      "initial_approved": 37,
+      "initial_rejected": 4,
+      "initial_timeouts": 9,
+      "initial_conversion": 0.74,
+      "initial_timeout_rate": 0.18,
+      "initial_refusal_rate": 0.08,
+      "initial_answer_success": 0.9024,
+      "final_approved": 45,
+      "final_rejected": 5,
+      "unresolved": 0,
+      "p90_initial_latency_sec": 29.0,
+      "latency_sample_size": 41,
+      "last_observation_at": "2026-07-30T09:24:36+03:00",
+      "data_age_sec": 2.0
+    },
+    "spacepayments": {
+      "conversion_estimate": 0.9417,
+      "source": "provider_history",
+      "scope": "provider",
+      "sample_size": 50,
+      "prior": 0.95,
+      "initial_approved": 47,
+      "initial_rejected": 2,
+      "initial_timeouts": 1,
+      "initial_conversion": 0.94,
+      "initial_timeout_rate": 0.02,
+      "initial_refusal_rate": 0.04,
+      "initial_answer_success": 0.9592,
+      "final_approved": 48,
+      "final_rejected": 2,
+      "unresolved": 0,
+      "p90_initial_latency_sec": 15.0,
+      "latency_sample_size": 49,
+      "last_observation_at": "2026-07-30T09:24:38+03:00",
+      "data_age_sec": 0.0
+    }
+  },
+  "conversion_backtest": {
+    "vipay": {
+      "sample_size": 21,
+      "model_brier": 0.164347,
+      "published_prior_brier": 0.157852,
+      "interpretation": "sequential observed-attempt forecast with a fixed published prior"
+    },
+    "payflow": {
+      "sample_size": 10,
+      "model_brier": 0.36053,
+      "published_prior_brier": 0.4181,
+      "interpretation": "sequential observed-attempt forecast with a fixed published prior"
+    },
+    "quickpay": {
+      "sample_size": 40,
+      "model_brier": 0.230721,
+      "published_prior_brier": 0.2326,
+      "interpretation": "sequential observed-attempt forecast with a fixed published prior"
+    },
+    "spacepayments": {
+      "sample_size": 0,
+      "model_brier": null,
+      "published_prior_brier": null,
+      "interpretation": "sequential observed-attempt forecast with a fixed published prior"
+    }
+  },
+  "routing_profiles": {
+    "vipay": "reliable_history",
+    "payflow": "controlled_share",
+    "quickpay": "capacity_obligation"
+  },
+  "unassigned_operations": 0,
+  "rejected_operations": 2,
+  "skip_reasons": {
+    "lower_soft_score": 66,
+    "simulated_rejected": 15,
+    "rate_limit_exceeded": 97,
+    "status_check_rejected": 4,
+    "amount_below_minimum": 70,
+    "bank_not_in_list": 82,
+    "amount_exceeds_limit": 105,
+    "daily_limit_exceeded": 24
+  },
+  "projected_daily_utilization": {
+    "vipay": {
+      "used": 4191000,
+      "limit": 5000000,
+      "utilization_pct": 83.8
+    },
+    "payflow": {
+      "used": 2999000,
+      "limit": 3000000,
+      "utilization_pct": 100.0
+    },
+    "quickpay": {
+      "used": 7591494,
+      "limit": 8000000,
+      "utilization_pct": 94.9
+    }
+  },
+  "status_checks": {
+    "scheduled": 0,
+    "checking": 0,
+    "resolved": 19,
+    "reconciliation_pending": 0,
+    "tasks": [
+      {
+        "operation_id": "demo_200_021",
+        "provider": "payflow",
+        "idempotency_key": "demo_200_021:payflow",
+        "status": "resolved",
+        "attempts": 1,
+        "next_check_at": null,
+        "last_result": "approved",
+        "last_error": null
+      },
+      {
+        "operation_id": "demo_200_030",
+        "provider": "quickpay",
+        "idempotency_key": "demo_200_030:quickpay",
+        "status": "resolved",
+        "attempts": 1,
+        "next_check_at": null,
+        "last_result": "approved",
+        "last_error": null
+      },
+      {
+        "operation_id": "demo_200_037",
+        "provider": "quickpay",
+        "idempotency_key": "demo_200_037:quickpay",
+        "status": "resolved",
+        "attempts": 1,
+        "next_check_at": null,
+        "last_result": "rejected",
+        "last_error": null
+      },
+      {
+        "operation_id": "demo_200_043",
+        "provider": "quickpay",
+        "idempotency_key": "demo_200_043:quickpay",
+        "status": "resolved",
+        "attempts": 1,
+        "next_check_at": null,
+        "last_result": "rejected",
+        "last_error": null
+      },
+      {
+        "operation_id": "demo_200_065",
+        "provider": "quickpay",
+        "idempotency_key": "demo_200_065:quickpay",
+        "status": "resolved",
+        "attempts": 1,
+        "next_check_at": null,
+        "last_result": "approved",
+        "last_error": null
+      },
+      {
+        "operation_id": "demo_200_070",
+        "provider": "quickpay",
+        "idempotency_key": "demo_200_070:quickpay",
+        "status": "resolved",
+        "attempts": 1,
+        "next_check_at": null,
+        "last_result": "rejected",
+        "last_error": null
+      },
+      {
+        "operation_id": "demo_200_078",
+        "provider": "quickpay",
+        "idempotency_key": "demo_200_078:quickpay",
+        "status": "resolved",
+        "attempts": 1,
+        "next_check_at": null,
+        "last_result": "approved",
+        "last_error": null
+      },
+      {
+        "operation_id": "demo_200_095",
+        "provider": "quickpay",
+        "idempotency_key": "demo_200_095:quickpay",
+        "status": "resolved",
+        "attempts": 1,
+        "next_check_at": null,
+        "last_result": "approved",
+        "last_error": null
+      },
+      {
+        "operation_id": "demo_200_098",
+        "provider": "quickpay",
+        "idempotency_key": "demo_200_098:quickpay",
+        "status": "resolved",
+        "attempts": 1,
+        "next_check_at": null,
+        "last_result": "approved",
+        "last_error": null
+      },
+      {
+        "operation_id": "demo_200_100",
+        "provider": "spacepayments",
+        "idempotency_key": "demo_200_100:spacepayments",
+        "status": "resolved",
+        "attempts": 1,
+        "next_check_at": null,
+        "last_result": "approved",
+        "last_error": null
+      },
+      {
+        "operation_id": "demo_200_119",
+        "provider": "quickpay",
+        "idempotency_key": "demo_200_119:quickpay",
+        "status": "resolved",
+        "attempts": 1,
+        "next_check_at": null,
+        "last_result": "approved",
+        "last_error": null
+      },
+      {
+        "operation_id": "demo_200_138",
+        "provider": "quickpay",
+        "idempotency_key": "demo_200_138:quickpay",
+        "status": "resolved",
+        "attempts": 1,
+        "next_check_at": null,
+        "last_result": "approved",
+        "last_error": null
+      },
+      {
+        "operation_id": "demo_200_145",
+        "provider": "quickpay",
+        "idempotency_key": "demo_200_145:quickpay",
+        "status": "resolved",
+        "attempts": 1,
+        "next_check_at": null,
+        "last_result": "approved",
+        "last_error": null
+      },
+      {
+        "operation_id": "demo_200_157",
+        "provider": "quickpay",
+        "idempotency_key": "demo_200_157:quickpay",
+        "status": "resolved",
+        "attempts": 1,
+        "next_check_at": null,
+        "last_result": "approved",
+        "last_error": null
+      },
+      {
+        "operation_id": "demo_200_174",
+        "provider": "quickpay",
+        "idempotency_key": "demo_200_174:quickpay",
+        "status": "resolved",
+        "attempts": 1,
+        "next_check_at": null,
+        "last_result": "approved",
+        "last_error": null
+      },
+      {
+        "operation_id": "demo_200_179",
+        "provider": "quickpay",
+        "idempotency_key": "demo_200_179:quickpay",
+        "status": "resolved",
+        "attempts": 1,
+        "next_check_at": null,
+        "last_result": "approved",
+        "last_error": null
+      },
+      {
+        "operation_id": "demo_200_191",
+        "provider": "quickpay",
+        "idempotency_key": "demo_200_191:quickpay",
+        "status": "resolved",
+        "attempts": 1,
+        "next_check_at": null,
+        "last_result": "approved",
+        "last_error": null
+      },
+      {
+        "operation_id": "demo_200_192",
+        "provider": "quickpay",
+        "idempotency_key": "demo_200_192:quickpay",
+        "status": "resolved",
+        "attempts": 1,
+        "next_check_at": null,
+        "last_result": "rejected",
+        "last_error": null
+      },
+      {
+        "operation_id": "demo_200_194",
+        "provider": "quickpay",
+        "idempotency_key": "demo_200_194:quickpay",
+        "status": "resolved",
+        "attempts": 1,
+        "next_check_at": null,
+        "last_result": "approved",
+        "last_error": null
+      }
+    ]
+  },
+  "circuit_breakers": {},
+  "recommendations": [
+    "vipay: использовано 83,8% дневного лимита. Уменьшите долю новых операций, направляемых этому провайдеру",
+    "payflow: использовано 100,0% дневного лимита. Уменьшите долю новых операций, направляемых этому провайдеру",
+    "quickpay: использовано 94,9% дневного лимита. Уменьшите долю новых операций, направляемых этому провайдеру",
+    "vipay: фактическая доля операций — 16%, целевая — 40%. Увеличьте долю новых операций для этого провайдера",
+    "payflow: фактическая доля операций — 9%, целевая — 35%. Увеличьте долю новых операций для этого провайдера",
+    "quickpay: фактическая доля операций — 44%, целевая — 25%. Уменьшите долю новых операций для этого провайдера",
+    "spacepayments: резервный провайдер получил 31% операций при целевом значении 0%. Снизьте использование fallback, устранив причины недоступности основных провайдеров"
+  ]
+}

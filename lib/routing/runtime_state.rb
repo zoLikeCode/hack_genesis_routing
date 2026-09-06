@@ -2,6 +2,8 @@
 
 module Routing
   class RuntimeState
+    include Serialization
+
     Snapshot = Data.define(:revision, :providers, :soft_goals)
 
     class ReserveResult

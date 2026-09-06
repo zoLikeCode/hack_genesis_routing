@@ -3,38 +3,38 @@
 module Routing
   class Engine
     include Recording
+    include Reconciliation
+    include Setup
 
     FALLBACK_SELECTED = "fallback_selected"
+    CIRCUIT_BREAKER_OPEN = "circuit_breaker_open"
+    STATUS_CHECK_REJECTED = "status_check_rejected"
 
-    attr_reader :state, :status_checker, :status_check_runner
+    attr_reader :state, :status_checker, :status_check_runner, :circuit_breaker
 
     def self.call(operations:, providers:, policy:, simulator: nil, state: nil)
       new(operations, providers, policy, simulator, state: state).call
     end
 
-    def initialize(operations, providers, policy, simulator = nil, state: nil)
-      Routing.assert(operations.respond_to?(:each), "operations must be enumerable")
-      Routing.assert(providers.is_a?(ProviderPool), "providers must be a ProviderPool")
-      Routing.assert(policy.is_a?(Policy), "policy must be Routing::Policy")
+    def initialize(operations, providers, policy, simulator = nil, **options)
+      validate_engine_inputs!(operations, providers, policy)
       @operations = operations
       @providers = providers
       @policy = policy
       @policy.validate_provider_targets!(@providers)
       apply_default_requests_per_minute_limit!
-      @simulator = simulator || Simulator.new(seed: policy.simulation_seed)
-      @state = state || RuntimeState.new(providers, metrics_config: policy.metrics, policy: policy)
-      Routing.assert(@state.is_a?(RuntimeState), "state must be Routing::RuntimeState")
-      Routing.assert(@state.providers.equal?(providers), "runtime state must own the provider pool")
-      @status_checker = build_status_checker
-      @status_check_runner = StatusCheckRunner.new(checker: @status_checker)
-      @processed_ids = {}
-      @last_created_at = nil
+      initialize_runtime!(simulator, options)
+      initialize_status_checks!
+      initialize_tracking!
     end
 
     def call
-      decisions = @operations.each_with_object([]) { |operation, result| result << route_one(operation) }
-      @status_check_runner.drain
-      decisions
+      @operations.each { |operation| route_one(operation) }
+      @status_check_runner.drain do |result|
+        handle_status_settlements(result)
+        persist_runtime!
+      end
+      @operations.map { |operation| @decisions_by_id.fetch(operation.id) }
     end
 
     def route_one(operation)
@@ -42,7 +42,10 @@ module Routing
       run_due_status_checks(operation)
       decision = route(operation)
       @processed_ids[operation.id] = true
+      @operations_by_id[operation.id] = operation
+      @decisions_by_id[operation.id] = decision
       @last_created_at = operation.created_at unless operation.created_at.nil?
+      persist_runtime!
       decision
     end
 
@@ -53,7 +56,8 @@ module Routing
         state: @state,
         providers: @providers,
         client: @simulator,
-        config: @policy.status_check
+        config: @policy.status_check,
+        circuit_breaker: @circuit_breaker
       )
     end
 
@@ -62,9 +66,9 @@ module Routing
       @providers.apply_default_requests_per_minute_limit!(limit) unless limit.nil?
     end
 
-    def route(operation)
+    def route(operation, context: RouteContext.new)
       Routing.assert(operation.is_a?(Operation), "operation must be Routing::Operation")
-      context = RouteContext.new
+      exclude_open_circuits!(context)
 
       loop do
         decision = route_attempt(operation, context)
@@ -82,6 +86,7 @@ module Routing
       context.merge_skips!(selection.evaluation.skipped)
       return reservation_failed(selection, reserved, context) unless reserved.reserved?
 
+      persist_runtime!
       outcome = simulate_try(selection.provider, operation, reserved.reservation)
       context.add_latency!(outcome.fetch(:latency_sec))
       decision = apply_outcome(operation, selection, context, outcome, reserved.reservation)
@@ -187,10 +192,6 @@ module Routing
       return if @last_created_at.nil? || operation.created_at.nil? || operation.created_at >= @last_created_at
 
       raise InvalidInputError, "operations must be ordered by created_at"
-    end
-
-    def run_due_status_checks(operation)
-      @status_check_runner.run_due(now: operation.created_at) unless operation.created_at.nil?
     end
 
     def timeout_time(operation, context)

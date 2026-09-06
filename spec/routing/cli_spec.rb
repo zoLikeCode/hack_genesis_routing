@@ -15,6 +15,16 @@ RSpec.describe Routing::CLI do
     end
   end
 
+  it "writes an operational runtime snapshot" do
+    with_cli_output do |decisions, report|
+      run_cli(decisions, report)
+      runtime = "#{report}.runtime.json"
+      expect(Routing::JsonFile.read(runtime)).to include(
+        "runtime_state", "status_checks", "circuit_breakers"
+      )
+    end
+  end
+
   it "writes decisions that pass the public validator" do
     with_cli_output do |decisions, report|
       run_cli(decisions, report)
@@ -40,7 +50,8 @@ RSpec.describe Routing::CLI do
         "--policy", File.join(SPEC_ROOT, "config/routing_policy.yml"),
         "--history", File.join(SPEC_ROOT, "data/operations_history.csv"),
         "--decisions", decisions,
-        "--report", report
+        "--report", report,
+        "--runtime", "#{report}.runtime.json"
       ]
     )
   end

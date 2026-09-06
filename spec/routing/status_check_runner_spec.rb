@@ -14,15 +14,15 @@ RSpec.describe Routing::StatusCheckRunner do
     expect(checker.tasks.first).to have_attributes(status: "resolved", attempts: 2)
   end
 
-  it "stops at manual review while keeping the reservation", :aggregate_failures do
+  it "stops at reconciliation while keeping the reservation", :aggregate_failures do
     checker, reservation, now = build_checker(statuses: %w[pending pending], max_attempts: 2)
     checker.schedule(reservation, timed_out_at: now)
 
     totals = described_class.new(checker: checker).drain
 
-    expect(totals).to include("checked" => 2, "rescheduled" => 1, "manual_review" => 1)
+    expect(totals).to include("checked" => 2, "rescheduled" => 1, "reconciliation_pending" => 1)
     expect(reservation.status).to eq("timed_out")
-    expect(checker.tasks.first.status).to eq("manual_review")
+    expect(checker.tasks.first.status).to eq("reconciliation_pending")
   end
 
   it "runs a due check without waiting for another operation", :aggregate_failures do
@@ -37,6 +37,21 @@ RSpec.describe Routing::StatusCheckRunner do
     expect(runner).to be_running
   ensure
     runner&.stop
+  end
+
+  it "performs exactly five checks when the provider never reaches a terminal status", :aggregate_failures do
+    checker, reservation, now = build_checker(statuses: Array.new(5, "pending"), max_attempts: 5)
+    checker.schedule(reservation, timed_out_at: now)
+
+    totals = described_class.new(checker: checker).drain
+
+    expect(totals).to include(
+      "checked" => 5, "rescheduled" => 4, "reconciliation_pending" => 1, "resolved" => 0
+    )
+    expect(checker.tasks.first).to have_attributes(
+      status: "reconciliation_pending", attempts: 5, next_check_at: nil
+    )
+    expect(reservation.status).to eq("timed_out")
   end
 
   def build_checker(statuses:, max_attempts: 3, initial_delay: 5)

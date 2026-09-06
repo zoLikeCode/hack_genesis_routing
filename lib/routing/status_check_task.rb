@@ -5,7 +5,7 @@ require "time"
 module Routing
   class StatusCheckTask
     ACTIVE_STATUSES = %w[scheduled checking].freeze
-    TERMINAL_STATUSES = %w[resolved manual_review].freeze
+    TERMINAL_STATUSES = %w[resolved reconciliation_pending].freeze
     STATUSES = (ACTIVE_STATUSES + TERMINAL_STATUSES).freeze
 
     attr_reader :reservation, :attempts, :next_check_at, :last_result, :last_error, :status
@@ -57,8 +57,8 @@ module Routing
       self
     end
 
-    def manual_review!(result:, error: nil)
-      transition!("manual_review", from: "checking")
+    def reconciliation_pending!(result:, error: nil)
+      transition!("reconciliation_pending", from: "checking")
       @last_result = result
       @last_error = error
       @next_check_at = nil

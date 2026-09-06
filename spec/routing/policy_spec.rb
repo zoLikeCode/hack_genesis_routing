@@ -39,7 +39,7 @@ RSpec.describe Routing::Policy do
     end
 
     it "loads status-check settings" do
-      expect(policy.status_check).to include("enabled" => true, "initial_delay_sec" => 5, "max_attempts" => 10)
+      expect(policy.status_check).to include("enabled" => true, "initial_delay_sec" => 5, "max_attempts" => 5)
     end
   end
 
@@ -112,7 +112,7 @@ RSpec.describe Routing::Policy do
 
       expect(policy.status_check).to eq(
         "enabled" => true, "initial_delay_sec" => 5,
-        "retry_delays_sec" => [5, 15, 30, 60, 120], "max_attempts" => 10
+        "retry_delays_sec" => [5, 15, 30, 60], "max_attempts" => 5
       )
     end
 
@@ -123,6 +123,27 @@ RSpec.describe Routing::Policy do
           "strategies" => { "conversion" => { "enabled" => true, "weight" => 1 } }
         )
       end.to raise_error(Routing::InvalidInputError, /non-empty list/)
+    end
+  end
+
+  describe "circuit_breaker" do
+    it "uses production-safe defaults" do
+      policy = described_class.new(
+        "strategies" => { "conversion" => { "enabled" => true, "weight" => 1 } }
+      )
+
+      expect(policy.circuit_breaker).to eq(
+        "enabled" => true, "unresolved_count_limit" => 5, "unresolved_amount_limit" => 500_000
+      )
+    end
+
+    it "rejects invalid unresolved thresholds" do
+      expect do
+        described_class.new(
+          "circuit_breaker" => { "unresolved_count_limit" => 0 },
+          "strategies" => { "conversion" => { "enabled" => true, "weight" => 1 } }
+        )
+      end.to raise_error(Routing::InvalidInputError, /unresolved_count_limit/)
     end
   end
 end

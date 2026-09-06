@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require "json"
+require "fileutils"
 
 module Routing
   module JsonFile
@@ -11,9 +12,13 @@ module Routing
     end
 
     def self.write(path, data)
-      File.write(path, "#{JSON.pretty_generate(data)}\n")
+      temporary = "#{path}.tmp-#{Process.pid}-#{Thread.current.object_id}"
+      File.write(temporary, "#{JSON.pretty_generate(data)}\n")
+      FileUtils.mv(temporary, path, force: true)
     rescue Errno::ENOENT, Errno::EACCES, Errno::EROFS => e
       raise InvalidInputError, "#{path}: #{e.message}"
+    ensure
+      File.delete(temporary) if defined?(temporary) && File.exist?(temporary)
     end
   end
 end

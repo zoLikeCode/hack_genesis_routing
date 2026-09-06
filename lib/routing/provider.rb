@@ -83,6 +83,18 @@ module Routing
       @request_times.size
     end
 
+    def runtime_to_h
+      {
+        "status" => status,
+        "committed_daily_approved_amount" => committed_daily_approved_amount,
+        "daily_reserved_amount" => daily_reserved_amount,
+        "in_progress_count" => in_progress_count,
+        "in_progress_amount" => in_progress_amount,
+        "available_requisites" => available_requisites,
+        "request_times" => @request_times.map(&:iso8601)
+      }
+    end
+
     private
 
     def stringify_keys(attrs)

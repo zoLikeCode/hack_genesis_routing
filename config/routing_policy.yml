@@ -4,8 +4,13 @@ simulation_seed: 1
 status_check:
   enabled: true
   initial_delay_sec: 5
-  retry_delays_sec: [5, 15, 30, 60, 120]
-  max_attempts: 10
+  retry_delays_sec: [5, 15, 30, 60]
+  max_attempts: 5
+
+circuit_breaker:
+  enabled: true
+  unresolved_count_limit: 5
+  unresolved_amount_limit: 500000
 
 # Mandatory eligibility rules. Strategies never override these constraints.
 hard_constraints:

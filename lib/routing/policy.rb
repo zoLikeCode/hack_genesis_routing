@@ -9,7 +9,7 @@ module Routing
       { "max" => 100_000, "providers" => %w[vipay quickpay payflow] },
       { "max" => nil, "providers" => %w[quickpay vipay payflow] }
     ].freeze
-    attr_reader :active_profile, :provider_profiles, :status_check, :metrics, :amount_bands
+    attr_reader :active_profile, :provider_profiles, :status_check, :circuit_breaker, :metrics, :amount_bands
 
     def self.load(path)
       new(parse(path))
@@ -27,7 +27,7 @@ module Routing
       @amount_bands = AmountBands.new(@data.fetch("amount_bands", DEFAULT_AMOUNT_BANDS))
       @active_profile = normalize_active_profile(@data["active_profile"])
       @provider_profiles = normalize_provider_profiles(@data.fetch("provider_profiles", {}))
-      @status_check = normalize_status_check(@data.fetch("status_check", {}))
+      configure_runtime_policy!
       validate_strategy_source!
       @active_strategies = resolve_active_strategies
     end
@@ -100,6 +100,11 @@ module Routing
 
     private
 
+    def configure_runtime_policy!
+      @status_check = normalize_status_check(@data.fetch("status_check", {}))
+      @circuit_breaker = normalize_circuit_breaker(@data.fetch("circuit_breaker", {}))
+    end
+
     def stringify_keys(hash)
       hash.transform_keys(&:to_s)
     end
@@ -128,8 +133,8 @@ module Routing
       data = stringify_keys(raw.to_h)
       enabled = data.fetch("enabled", true)
       initial_delay = data.fetch("initial_delay_sec", 5)
-      retry_delays = data.fetch("retry_delays_sec", [5, 15, 30, 60, 120])
-      max_attempts = data.fetch("max_attempts", 10)
+      retry_delays = data.fetch("retry_delays_sec", [5, 15, 30, 60])
+      max_attempts = data.fetch("max_attempts", 5)
       validate_status_check!(enabled, initial_delay, retry_delays, max_attempts)
 
       {
@@ -189,6 +194,26 @@ module Routing
 
     def profiles_selected?
       !active_profile.nil? || !@provider_profiles.empty?
+    end
+
+    def normalize_circuit_breaker(raw)
+      input_error!("circuit_breaker must be a mapping") unless raw.respond_to?(:to_h)
+      data = stringify_keys(raw.to_h)
+      enabled = data.fetch("enabled", true)
+      count_limit = data.fetch("unresolved_count_limit", 5)
+      amount_limit = data.fetch("unresolved_amount_limit", 500_000)
+      input_error!("circuit_breaker.enabled must be true or false") unless [true, false].include?(enabled)
+      unless count_limit.is_a?(Integer) && count_limit.positive?
+        input_error!("circuit_breaker.unresolved_count_limit must be a positive integer")
+      end
+      unless amount_limit.is_a?(Numeric) && amount_limit.positive?
+        input_error!("circuit_breaker.unresolved_amount_limit must be positive")
+      end
+      {
+        "enabled" => enabled,
+        "unresolved_count_limit" => count_limit,
+        "unresolved_amount_limit" => amount_limit
+      }.freeze
     end
 
     def direct_strategy_enabled?

@@ -28,6 +28,17 @@ RSpec.describe Routing::JsonFile do
       end
     end
 
+    it "replaces an existing JSON snapshot" do
+      Dir.mktmpdir do |dir|
+        path = File.join(dir, "out.json")
+        described_class.write(path, { "revision" => 1 })
+
+        described_class.write(path, { "revision" => 2 })
+
+        expect(described_class.read(path)).to eq("revision" => 2)
+      end
+    end
+
     it "raises InvalidInputError when the parent directory is missing" do
       path = File.join("missing-json-parent-#{Process.pid}", "out.json")
       expect { described_class.write(path, {}) }.to raise_error(Routing::InvalidInputError)

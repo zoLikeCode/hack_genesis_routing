@@ -40,6 +40,18 @@ module Routing
       transition!("rejected", from: ACTIVE_STATUSES)
     end
 
+    def to_h
+      {
+        "idempotency_key" => idempotency_key,
+        "operation_id" => operation_id,
+        "provider" => provider_name,
+        "amount" => amount,
+        "created_at" => created_at&.iso8601,
+        "status" => status,
+        "operation" => operation.to_h
+      }
+    end
+
     private
 
     def transition!(next_status, from:)

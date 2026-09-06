@@ -26,7 +26,8 @@ module Routing
         history: File.join(ROOT, "data/operations_history.csv"),
         policy: File.join(ROOT, "config/routing_policy.yml"),
         decisions_out: "routing_decisions_test.json",
-        report_out: "routing_report_test.json"
+        report_out: "routing_report_test.json",
+        runtime_out: "routing_runtime_state.json"
       }
     end
 
@@ -44,6 +45,7 @@ module Routing
       opts.on("--policy PATH", "routing policy YAML") { |value| options[:policy] = value }
       opts.on("--decisions PATH", "output routing_decisions JSON") { |value| options[:decisions_out] = value }
       opts.on("--report PATH", "output routing_report JSON") { |value| options[:report_out] = value }
+      opts.on("--runtime PATH", "output durable runtime state JSON") { |value| options[:runtime_out] = value }
       opts.on("-h", "--help", "Show help") do
         puts opts
         exit 0
@@ -56,20 +58,30 @@ module Routing
       operations = Operation.load_queue(options[:queue])
       history = History.load(options[:history]) if options[:history] && File.exist?(options[:history])
       state = RuntimeState.new(providers, history: history, metrics_config: policy.metrics, policy: policy)
-      engine = Engine.new(operations, providers, policy, state: state)
+      runtime_store = RuntimeStore.new(options[:runtime_out])
+      engine = Engine.new(operations, providers, policy, state: state, runtime_store: runtime_store)
       decisions = engine.call
-      report = Report.call(
+      report = build_report(engine, decisions, operations, policy, history)
+      write_outputs(options, decisions, report)
+      0
+    end
+
+    def build_report(engine, decisions, operations, policy, history)
+      Report.call(
         decisions: decisions,
         operations: operations,
-        providers: providers,
+        providers: engine.state.providers,
         policy: policy,
         history: history,
         runtime_state: engine.state,
-        status_checker: engine.status_checker
+        status_checker: engine.status_checker,
+        circuit_breaker: engine.circuit_breaker
       )
+    end
+
+    def write_outputs(options, decisions, report)
       JsonFile.write(options[:decisions_out], decisions.map(&:to_h))
       JsonFile.write(options[:report_out], report)
-      0
     end
   end
 end

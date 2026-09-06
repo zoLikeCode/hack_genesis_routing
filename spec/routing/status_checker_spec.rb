@@ -25,7 +25,7 @@ RSpec.describe Routing::StatusChecker do
     expect(state.providers.fetch("vipay")).to have_attributes(in_progress_count: 0, daily_reserved_amount: 0)
   end
 
-  it "keeps an unresolved reservation for manual review", :aggregate_failures do
+  it "moves an unresolved reservation to reconciliation after the retry budget", :aggregate_failures do
     checker, state, reservation, now = build_checker(
       statuses: %w[pending pending],
       config: status_config("max_attempts" => 2)
@@ -35,7 +35,9 @@ RSpec.describe Routing::StatusChecker do
     checker.run_due(now: now + 5)
     checker.run_due(now: now + 15)
 
-    expect(task).to have_attributes(status: "manual_review", attempts: 2, last_result: "pending")
+    expect(task).to have_attributes(
+      status: "reconciliation_pending", attempts: 2, last_result: "pending", next_check_at: nil
+    )
     expect(reservation.status).to eq("timed_out")
     expect(state.providers.fetch("vipay").in_progress_count).to eq(1)
   end
@@ -56,13 +58,15 @@ RSpec.describe Routing::StatusChecker do
 
     checker.run_due(now: now + 5)
 
-    expect(task).to have_attributes(status: "manual_review", attempts: 1, last_result: "error")
+    expect(task).to have_attributes(
+      status: "reconciliation_pending", attempts: 1, last_result: "error", next_check_at: nil
+    )
     expect(task.last_error).to include("IOError: status endpoint unavailable")
     expect(reservation.status).to eq("timed_out")
     expect(state.providers.fetch("vipay").in_progress_count).to eq(1)
   end
 
-  it "escalates a conflicting terminal result to manual review", :aggregate_failures do
+  it "records a conflicting terminal result for reconciliation", :aggregate_failures do
     checker, state, reservation, now = build_checker(statuses: %w[cancelled])
     task = checker.schedule(reservation, timed_out_at: now)
     state.resolve_timeout!(
@@ -73,8 +77,8 @@ RSpec.describe Routing::StatusChecker do
 
     result = checker.run_due(now: now + 5)
 
-    expect(result).to include("checked" => 1, "manual_review" => 1, "resolved" => 0)
-    expect(task).to have_attributes(status: "manual_review", last_result: "cancelled")
+    expect(result).to include("checked" => 1, "reconciliation_pending" => 1, "resolved" => 0)
+    expect(task).to have_attributes(status: "reconciliation_pending", last_result: "cancelled")
     expect(task.last_error).to include("reservation is already approved")
     expect(reservation.status).to eq("approved")
   end

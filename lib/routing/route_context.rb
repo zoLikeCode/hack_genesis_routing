@@ -4,10 +4,16 @@ module Routing
   class RouteContext
     attr_reader :attempts, :attempted, :total_latency
 
-    def initialize
-      @attempts = []
-      @attempted = []
-      @total_latency = 0
+    def initialize(attempts: [], attempted: [], total_latency: 0)
+      Routing.assert(attempts.is_a?(Array) && attempts.all?(HardConstraints::Attempt),
+                     "route context attempts must be Attempt objects")
+      Routing.assert(attempted.is_a?(Array) && attempted.all? { |name| name.is_a?(String) && !name.empty? },
+                     "route context attempted providers must be non-empty strings")
+      Routing.assert(total_latency.is_a?(Numeric) && total_latency >= 0,
+                     "route context latency must be non-negative")
+      @attempts = attempts.dup
+      @attempted = attempted.uniq
+      @total_latency = total_latency
     end
 
     def merge_skips!(skipped)

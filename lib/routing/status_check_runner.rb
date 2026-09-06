@@ -2,7 +2,7 @@
 
 module Routing
   class StatusCheckRunner
-    TOTAL_KEYS = %w[checked resolved rescheduled manual_review].freeze
+    TOTAL_KEYS = %w[checked resolved rescheduled reconciliation_pending].freeze
 
     attr_reader :checker
 
@@ -52,9 +52,11 @@ module Routing
     end
 
     def drain
-      totals = TOTAL_KEYS.to_h { |key| [key, 0] }
+      totals = TOTAL_KEYS.to_h { |key| [key, 0] }.merge("settlements" => [])
       while (next_check_at = checker.next_check_at)
-        merge!(totals, run_due(now: next_check_at))
+        current = run_due(now: next_check_at)
+        yield current if block_given?
+        merge!(totals, current)
       end
       totals.freeze
     end
@@ -102,6 +104,7 @@ module Routing
 
     def merge!(totals, current)
       TOTAL_KEYS.each { |key| totals[key] += current.fetch(key) }
+      totals["settlements"].concat(current.fetch("settlements", []))
     end
   end
 end
